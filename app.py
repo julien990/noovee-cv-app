@@ -428,10 +428,20 @@ def analyser_cv_avec_ia(texte):
 # 6. GESTION DE LA BASE DE DONNEES
 # ---------------------------------------------------------------------------
 def charger_db():
-    return charger_db_cloud()
+    if os.path.exists(PATH_DB):
+        try:
+            with open(PATH_DB, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        except:
+            return {}
+    return {}
 
 def sauvegarder_db(db):
-    sauvegarder_db_cloud(db)
+    try:
+        with open(PATH_DB, 'w', encoding='utf-8') as f:
+            json.dump(db, f, ensure_ascii=False, indent=2)
+    except:
+        pass
 
 def tel_valide(tel):
     return bool(tel) and str(tel) not in (NO_DATA, "", "None", "null") and len(str(tel)) >= 10
