@@ -52,8 +52,21 @@ def _decode(value: Optional[str]) -> list:
     except Exception:
         return []
 
+def _clean_str(value) -> Optional[str]:
+    """Nettoie une valeur string — retourne None si vide, 'null', 'none', ou vraiment None."""
+    if value is None:
+        return None
+    s = str(value).strip()
+    if s.lower() in ("null", "none", "", "n/a", "na"):
+        return None
+    return s
+
 def _row_to_dict(row) -> dict:
     d = dict(row)
+    # Nettoyage des champs texte
+    for field in ("nom", "prenom", "email", "telephone", "poste"):
+        d[field] = _clean_str(d.get(field))
+    # Decodage JSON
     for field in ("competences", "domaines_fonctionnels", "entreprises", "experiences"):
         d[field] = _decode(d.get(field))
     return d
@@ -70,8 +83,11 @@ def insert_contact(data: dict) -> int:
                 created_at, updated_at
             ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
         """, (
-            data.get("nom"), data.get("prenom"),
-            data.get("email"), data.get("telephone"), data.get("poste"),
+            _clean_str(data.get("nom")),
+            _clean_str(data.get("prenom")),
+            _clean_str(data.get("email")),
+            _clean_str(data.get("telephone")),
+            _clean_str(data.get("poste")),
             data.get("annees_experience", 0),
             _encode(data.get("competences", [])),
             _encode(data.get("domaines_fonctionnels", [])),
@@ -94,8 +110,11 @@ def update_contact(contact_id: int, data: dict):
                 entreprises=?, experiences=?, texte_brut=?, updated_at=?
             WHERE id=?
         """, (
-            data.get("nom"), data.get("prenom"),
-            data.get("email"), data.get("telephone"), data.get("poste"),
+            _clean_str(data.get("nom")),
+            _clean_str(data.get("prenom")),
+            _clean_str(data.get("email")),
+            _clean_str(data.get("telephone")),
+            _clean_str(data.get("poste")),
             data.get("annees_experience", 0),
             _encode(data.get("competences", [])),
             _encode(data.get("domaines_fonctionnels", [])),
@@ -154,31 +173,34 @@ def get_tracked_filenames() -> set:
 def find_duplicates() -> list:
     contacts = get_all_contacts()
     groups = {}
-
     for c in contacts:
         keys = []
         email  = (c.get("email") or "").lower().strip()
         nom    = (c.get("nom") or "").lower().strip()
         prenom = (c.get("prenom") or "").lower().strip()
-
-        if email:
-            keys.append(f"email:{email}")
-        if nom and prenom:
-            keys.append(f"name:{prenom}_{nom}")
-
+        if email: keys.append(f"email:{email}")
+        if nom and prenom: keys.append(f"name:{prenom}_{nom}")
         for key in keys:
-            if key not in groups:
-                groups[key] = []
+            if key not in groups: groups[key] = []
             if not any(x["id"] == c["id"] for x in groups[key]):
                 groups[key].append(c)
 
     duplicates = [g for g in groups.values() if len(g) > 1]
-
     unique, seen_ids = [], []
     for group in duplicates:
         ids = frozenset(c["id"] for c in group)
         if ids not in seen_ids:
             seen_ids.append(ids)
             unique.append(group)
-
     return unique
+
+
+def clean_null_strings():
+    """Nettoie les chaines 'null' existantes en base — a appeler une fois."""
+    with get_connection() as conn:
+        for field in ("nom", "prenom", "email", "telephone", "poste"):
+            conn.execute(f"""
+                UPDATE contacts SET {field} = NULL
+                WHERE lower(trim({field})) IN ('null', 'none', 'n/a', 'na', '')
+            """)
+        conn.commit()
