@@ -907,8 +907,7 @@ st.markdown("""
 
 if not os.path.exists(PATH_DOSSIER):
     if IS_CLOUD:
-        os.makedirs(PATH_DOSSIER, exist_ok=True)
-        os.makedirs(PATH_PDF, exist_ok=True)
+        pass  # Les dossiers /tmp sont crees au demarrage
     else:
         st.error("Dossier introuvable : " + PATH_DOSSIER)
         st.stop()
