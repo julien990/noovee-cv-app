@@ -1,0 +1,4 @@
+streamlit>=1.35.0
+python-pptx>=0.6.21
+pypdf>=3.0.0
+pandas>=2.0.0
