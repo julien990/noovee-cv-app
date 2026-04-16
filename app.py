@@ -1,4 +1,12 @@
 import streamlit as st
+
+# CSS - Enlever le vert horrible
+st.markdown("""
+<style>
+    .stButton > button { background-color: #0284c7 !important; color: white !important; }
+    .stMetricValue { color: #0284c7 !important; }
+</style>
+""", unsafe_allow_html=True)
 import os, re, json, subprocess, shutil, time, base64
 import urllib.request
 import pandas as pd
