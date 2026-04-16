@@ -15,13 +15,10 @@ PATH_PDF = os.path.join(PATH_DOSSIER, "PDF")
 PATH_DB  = os.path.join(PATH_DOSSIER, "contacts_db.json")
 NO_DATA  = "---"
 
-def _is_cloud():
-    try:
-        return "gcp_service_account" in st.secrets
-    except Exception:
-        return False
-
-IS_CLOUD = _is_cloud()
+try:
+    IS_CLOUD = "gcp_service_account" in st.secrets
+except:
+    IS_CLOUD = False
 
 ANTHROPIC_URL = "https://api.anthropic.com/v1/messages"
 GROQ_URL      = "https://api.groq.com/openai/v1/chat/completions"
