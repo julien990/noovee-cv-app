@@ -17,9 +17,10 @@ NO_DATA  = "---"
 
 try:
     IS_CLOUD = "gcp_service_account" in st.secrets
-st.sidebar.write("IS_CLOUD =", IS_CLOUD)
 except:
     IS_CLOUD = False
+
+st.sidebar.write("IS_CLOUD =", IS_CLOUD)
 
 ANTHROPIC_URL = "https://api.anthropic.com/v1/messages"
 GROQ_URL      = "https://api.groq.com/openai/v1/chat/completions"
