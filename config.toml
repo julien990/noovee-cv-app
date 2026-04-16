@@ -1,7 +1,20 @@
 [theme]
-base = "light"
-primaryColor = "#093F28"
-backgroundColor = "#F5F7FA"
-secondaryBackgroundColor = "#EEF2F5"
-textColor = "#1E2A3A"
+primaryColor = "#2196F3"
+backgroundColor = "#ffffff"
+secondaryBackgroundColor = "#f0f2f6"
+textColor = "#262730"
 font = "sans serif"
+
+[client]
+showErrorDetails = true
+toolbarMode = "viewer"
+showSidebarNavigation = true
+
+[logger]
+level = "info"
+
+[server]
+maxUploadSize = 200
+port = 8501
+headless = true
+runOnSave = true
