@@ -428,20 +428,10 @@ def analyser_cv_avec_ia(texte):
 # 6. GESTION DE LA BASE DE DONNEES
 # ---------------------------------------------------------------------------
 def charger_db():
-    if os.path.exists(PATH_DB):
-        try:
-            with open(PATH_DB, 'r', encoding='utf-8') as f:
-                return json.load(f)
-        except:
-            return {}
-    return {}
+    return charger_db_cloud()
 
 def sauvegarder_db(db):
-    try:
-        with open(PATH_DB, 'w', encoding='utf-8') as f:
-            json.dump(db, f, ensure_ascii=False, indent=2)
-    except:
-        pass
+    sauvegarder_db_cloud(db)
 
 def tel_valide(tel):
     return bool(tel) and str(tel) not in (NO_DATA, "", "None", "null") and len(str(tel)) >= 10
@@ -458,7 +448,20 @@ def charger_tous_les_cvs(path_dossier, path_pdf):
     entrees = {}
 
     # Si cloud : telecharger les fichiers depuis Drive
-    pass  # Mode cloud : upload via interface
+    if IS_CLOUD:
+        folder_id, pdf_folder_id = drive_get_folder_ids()
+        if folder_id:
+            # Telecharger PPTX
+            for f in drive_list_files(folder_id, (".pptx",)):
+                dest = os.path.join(path_dossier, f["name"])
+                if not os.path.exists(dest):
+                    drive_download_file(f["id"], dest)
+            # Telecharger PDF
+            if pdf_folder_id:
+                for f in drive_list_files(pdf_folder_id, (".pdf",)):
+                    dest = os.path.join(path_pdf, f["name"])
+                    if not os.path.exists(dest):
+                        drive_download_file(f["id"], dest)
 
     def ajouter(base, texte, source, pdf_path):
         if base not in entrees:
