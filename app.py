@@ -906,8 +906,12 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 if not os.path.exists(PATH_DOSSIER):
-    st.error("Dossier introuvable : " + PATH_DOSSIER)
-    st.stop()
+    if IS_CLOUD:
+        os.makedirs(PATH_DOSSIER, exist_ok=True)
+        os.makedirs(PATH_PDF, exist_ok=True)
+    else:
+        st.error("Dossier introuvable : " + PATH_DOSSIER)
+        st.stop()
 
 if "ao_cv_ouvert" not in st.session_state:
     st.session_state["ao_cv_ouvert"] = None
