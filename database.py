@@ -1,50 +1,103 @@
-# database.py
+# database.py — Compatible SQLite (local) et PostgreSQL (cloud)
 
-import sqlite3
+import os
 import json
 import re
 from datetime import datetime
-from pathlib import Path
 from typing import Optional
 
-DB_PATH = Path("noovee.db")
+DATABASE_URL = os.getenv("DATABASE_URL")
 
+# Si DATABASE_URL est defini -> PostgreSQL, sinon -> SQLite local
+USE_POSTGRES = bool(DATABASE_URL)
+
+
+# ── Connexion ──────────────────────────────────────────────────────────────────
 
 def get_connection():
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA journal_mode=WAL")
-    return conn
+    if USE_POSTGRES:
+        import psycopg2
+        import psycopg2.extras
+        conn = psycopg2.connect(DATABASE_URL)
+        return conn
+    else:
+        import sqlite3
+        from pathlib import Path
+        conn = sqlite3.connect(Path("noovee.db"))
+        conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA journal_mode=WAL")
+        return conn
 
+
+def placeholder(n: int = 1) -> str:
+    """Retourne le bon placeholder selon le driver (%s pour PG, ? pour SQLite)."""
+    if USE_POSTGRES:
+        return ", ".join(["%s"] * n)
+    return ", ".join(["?"] * n)
+
+
+def ph() -> str:
+    """Placeholder unique."""
+    return "%s" if USE_POSTGRES else "?"
+
+
+# ── Init DB ────────────────────────────────────────────────────────────────────
 
 def init_db():
-    with get_connection() as conn:
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS contacts (
-                id                    INTEGER PRIMARY KEY AUTOINCREMENT,
-                nom                   TEXT,
-                prenom                TEXT,
-                email                 TEXT,
-                telephone             TEXT,
-                poste                 TEXT,
-                annees_experience     INTEGER DEFAULT 0,
-                competences           TEXT DEFAULT '[]',
-                domaines_fonctionnels TEXT DEFAULT '[]',
-                entreprises           TEXT DEFAULT '[]',
-                experiences           TEXT DEFAULT '[]',
-                texte_brut            TEXT,
-                cv_filename           TEXT,
-                created_at            TEXT,
-                updated_at            TEXT
-            )
-        """)
+    conn = get_connection()
+    try:
+        cur = conn.cursor()
+        if USE_POSTGRES:
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS contacts (
+                    id                    SERIAL PRIMARY KEY,
+                    nom                   TEXT,
+                    prenom                TEXT,
+                    email                 TEXT,
+                    telephone             TEXT,
+                    poste                 TEXT,
+                    annees_experience     INTEGER DEFAULT 0,
+                    competences           TEXT DEFAULT '[]',
+                    domaines_fonctionnels TEXT DEFAULT '[]',
+                    entreprises           TEXT DEFAULT '[]',
+                    experiences           TEXT DEFAULT '[]',
+                    texte_brut            TEXT,
+                    cv_filename           TEXT,
+                    created_at            TEXT,
+                    updated_at            TEXT
+                )
+            """)
+        else:
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS contacts (
+                    id                    INTEGER PRIMARY KEY AUTOINCREMENT,
+                    nom                   TEXT,
+                    prenom                TEXT,
+                    email                 TEXT,
+                    telephone             TEXT,
+                    poste                 TEXT,
+                    annees_experience     INTEGER DEFAULT 0,
+                    competences           TEXT DEFAULT '[]',
+                    domaines_fonctionnels TEXT DEFAULT '[]',
+                    entreprises           TEXT DEFAULT '[]',
+                    experiences           TEXT DEFAULT '[]',
+                    texte_brut            TEXT,
+                    cv_filename           TEXT,
+                    created_at            TEXT,
+                    updated_at            TEXT
+                )
+            """)
         conn.commit()
+    finally:
+        conn.close()
 
+
+# ── Helpers ────────────────────────────────────────────────────────────────────
 
 def _encode(value) -> str:
     return json.dumps(value, ensure_ascii=False) if value else "[]"
 
-def _decode(value: Optional[str]) -> list:
+def _decode(value) -> list:
     if not value:
         return []
     try:
@@ -53,7 +106,6 @@ def _decode(value: Optional[str]) -> list:
         return []
 
 def _clean_str(value) -> Optional[str]:
-    """Nettoie une valeur string — retourne None si vide, 'null', 'none', ou vraiment None."""
     if value is None:
         return None
     s = str(value).strip()
@@ -61,81 +113,121 @@ def _clean_str(value) -> Optional[str]:
         return None
     return s
 
-def _row_to_dict(row) -> dict:
-    d = dict(row)
-    # Nettoyage des champs texte
+def _row_to_dict(row, cursor=None) -> dict:
+    if USE_POSTGRES:
+        cols = [desc[0] for desc in cursor.description]
+        d = dict(zip(cols, row))
+    else:
+        d = dict(row)
+
     for field in ("nom", "prenom", "email", "telephone", "poste"):
         d[field] = _clean_str(d.get(field))
-    # Decodage JSON
     for field in ("competences", "domaines_fonctionnels", "entreprises", "experiences"):
         d[field] = _decode(d.get(field))
     return d
 
 
+def _rows_to_dicts(rows, cursor) -> list:
+    return [_row_to_dict(row, cursor) for row in rows]
+
+
+# ── CRUD ───────────────────────────────────────────────────────────────────────
+
 def insert_contact(data: dict) -> int:
     now = datetime.now().isoformat()
-    with get_connection() as conn:
-        cursor = conn.execute("""
-            INSERT INTO contacts (
-                nom, prenom, email, telephone, poste,
-                annees_experience, competences, domaines_fonctionnels,
-                entreprises, experiences, texte_brut, cv_filename,
-                created_at, updated_at
-            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-        """, (
-            _clean_str(data.get("nom")),
-            _clean_str(data.get("prenom")),
-            _clean_str(data.get("email")),
-            _clean_str(data.get("telephone")),
-            _clean_str(data.get("poste")),
-            data.get("annees_experience", 0),
-            _encode(data.get("competences", [])),
-            _encode(data.get("domaines_fonctionnels", [])),
-            _encode(data.get("entreprises", [])),
-            _encode(data.get("experiences", [])),
-            (data.get("texte_brut", "") or "")[:8000],
-            data.get("cv_filename"), now, now,
-        ))
+    p   = ph()
+    sql = f"""
+        INSERT INTO contacts (
+            nom, prenom, email, telephone, poste,
+            annees_experience, competences, domaines_fonctionnels,
+            entreprises, experiences, texte_brut, cv_filename,
+            created_at, updated_at
+        ) VALUES ({placeholder(14)})
+    """
+    values = (
+        _clean_str(data.get("nom")),
+        _clean_str(data.get("prenom")),
+        _clean_str(data.get("email")),
+        _clean_str(data.get("telephone")),
+        _clean_str(data.get("poste")),
+        data.get("annees_experience", 0),
+        _encode(data.get("competences", [])),
+        _encode(data.get("domaines_fonctionnels", [])),
+        _encode(data.get("entreprises", [])),
+        _encode(data.get("experiences", [])),
+        (data.get("texte_brut", "") or "")[:8000],
+        data.get("cv_filename"),
+        now, now,
+    )
+
+    conn = get_connection()
+    try:
+        cur = conn.cursor()
+        if USE_POSTGRES:
+            cur.execute(sql + " RETURNING id", values)
+            new_id = cur.fetchone()[0]
+        else:
+            cur.execute(sql, values)
+            new_id = cur.lastrowid
         conn.commit()
-        return cursor.lastrowid
+        return new_id
+    finally:
+        conn.close()
 
 
 def update_contact(contact_id: int, data: dict):
     now = datetime.now().isoformat()
-    with get_connection() as conn:
-        conn.execute("""
-            UPDATE contacts SET
-                nom=?, prenom=?, email=?, telephone=?, poste=?,
-                annees_experience=?, competences=?, domaines_fonctionnels=?,
-                entreprises=?, experiences=?, texte_brut=?, updated_at=?
-            WHERE id=?
-        """, (
-            _clean_str(data.get("nom")),
-            _clean_str(data.get("prenom")),
-            _clean_str(data.get("email")),
-            _clean_str(data.get("telephone")),
-            _clean_str(data.get("poste")),
-            data.get("annees_experience", 0),
-            _encode(data.get("competences", [])),
-            _encode(data.get("domaines_fonctionnels", [])),
-            _encode(data.get("entreprises", [])),
-            _encode(data.get("experiences", [])),
-            (data.get("texte_brut", "") or "")[:8000],
-            now, contact_id,
-        ))
+    p   = ph()
+    sql = f"""
+        UPDATE contacts SET
+            nom={p}, prenom={p}, email={p}, telephone={p}, poste={p},
+            annees_experience={p}, competences={p}, domaines_fonctionnels={p},
+            entreprises={p}, experiences={p}, texte_brut={p}, updated_at={p}
+        WHERE id={p}
+    """
+    values = (
+        _clean_str(data.get("nom")),
+        _clean_str(data.get("prenom")),
+        _clean_str(data.get("email")),
+        _clean_str(data.get("telephone")),
+        _clean_str(data.get("poste")),
+        data.get("annees_experience", 0),
+        _encode(data.get("competences", [])),
+        _encode(data.get("domaines_fonctionnels", [])),
+        _encode(data.get("entreprises", [])),
+        _encode(data.get("experiences", [])),
+        (data.get("texte_brut", "") or "")[:8000],
+        now,
+        contact_id,
+    )
+    conn = get_connection()
+    try:
+        cur = conn.cursor()
+        cur.execute(sql, values)
         conn.commit()
+    finally:
+        conn.close()
 
 
 def delete_contact(contact_id: int):
-    with get_connection() as conn:
-        conn.execute("DELETE FROM contacts WHERE id=?", (contact_id,))
+    conn = get_connection()
+    try:
+        cur = conn.cursor()
+        cur.execute(f"DELETE FROM contacts WHERE id={ph()}", (contact_id,))
         conn.commit()
+    finally:
+        conn.close()
 
 
 def get_all_contacts() -> list:
-    with get_connection() as conn:
-        rows = conn.execute("SELECT * FROM contacts ORDER BY created_at DESC").fetchall()
-    return [_row_to_dict(r) for r in rows]
+    conn = get_connection()
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT * FROM contacts ORDER BY created_at DESC")
+        rows = cur.fetchall()
+        return _rows_to_dicts(rows, cur)
+    finally:
+        conn.close()
 
 
 def search_contacts(query: str) -> list:
@@ -143,31 +235,53 @@ def search_contacts(query: str) -> list:
     if not words:
         return get_all_contacts()
 
+    p = ph()
     conditions, params = [], []
     for word in words:
         q = f"%{word}%"
-        conditions.append("""(
-            lower(nom) LIKE ? OR lower(prenom) LIKE ? OR lower(poste) LIKE ?
-            OR lower(competences) LIKE ? OR lower(domaines_fonctionnels) LIKE ?
-            OR lower(entreprises) LIKE ? OR lower(texte_brut) LIKE ?
-        )""")
+        if USE_POSTGRES:
+            conditions.append("""(
+                lower(nom) LIKE %s OR lower(prenom) LIKE %s OR lower(poste) LIKE %s
+                OR lower(competences) LIKE %s OR lower(domaines_fonctionnels) LIKE %s
+                OR lower(entreprises) LIKE %s OR lower(texte_brut) LIKE %s
+            )""")
+        else:
+            conditions.append("""(
+                lower(nom) LIKE ? OR lower(prenom) LIKE ? OR lower(poste) LIKE ?
+                OR lower(competences) LIKE ? OR lower(domaines_fonctionnels) LIKE ?
+                OR lower(entreprises) LIKE ? OR lower(texte_brut) LIKE ?
+            )""")
         params.extend([q, q, q, q, q, q, q])
 
     where = " OR ".join(conditions)
-    with get_connection() as conn:
-        rows = conn.execute(f"SELECT * FROM contacts WHERE {where} ORDER BY created_at DESC", params).fetchall()
-    return [_row_to_dict(r) for r in rows]
+    conn = get_connection()
+    try:
+        cur = conn.cursor()
+        cur.execute(f"SELECT * FROM contacts WHERE {where} ORDER BY created_at DESC", params)
+        rows = cur.fetchall()
+        return _rows_to_dicts(rows, cur)
+    finally:
+        conn.close()
 
 
 def count_contacts() -> int:
-    with get_connection() as conn:
-        return conn.execute("SELECT COUNT(*) FROM contacts").fetchone()[0]
+    conn = get_connection()
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT COUNT(*) FROM contacts")
+        return cur.fetchone()[0]
+    finally:
+        conn.close()
 
 
 def get_tracked_filenames() -> set:
-    with get_connection() as conn:
-        rows = conn.execute("SELECT cv_filename FROM contacts WHERE cv_filename IS NOT NULL").fetchall()
-    return {r["cv_filename"] for r in rows}
+    conn = get_connection()
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT cv_filename FROM contacts WHERE cv_filename IS NOT NULL")
+        return {row[0] for row in cur.fetchall()}
+    finally:
+        conn.close()
 
 
 def find_duplicates() -> list:
@@ -196,11 +310,15 @@ def find_duplicates() -> list:
 
 
 def clean_null_strings():
-    """Nettoie les chaines 'null' existantes en base — a appeler une fois."""
-    with get_connection() as conn:
+    """Nettoie les chaines null existantes en base."""
+    conn = get_connection()
+    try:
+        cur = conn.cursor()
         for field in ("nom", "prenom", "email", "telephone", "poste"):
-            conn.execute(f"""
+            cur.execute(f"""
                 UPDATE contacts SET {field} = NULL
-                WHERE lower(trim({field})) IN ('null', 'none', 'n/a', 'na', '')
+                WHERE lower(trim(CAST({field} AS TEXT))) IN ('null', 'none', 'n/a', 'na', '')
             """)
         conn.commit()
+    finally:
+        conn.close()
