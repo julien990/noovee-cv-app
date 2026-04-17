@@ -45,7 +45,7 @@ def _call_openai_text(system_prompt: str, user_prompt: str, model: str = "gpt-4o
     r = client.chat.completions.create(
         model=model,
         messages=[{"role": "system", "content": system_prompt}, {"role": "user", "content": user_prompt}],
-        temperature=0.5, max_tokens=600,
+        temperature=0.5, max_tokens=800,
     )
     return r.choices[0].message.content.strip()
 
@@ -54,17 +54,35 @@ def _call_anthropic(system_prompt: str, user_prompt: str, model: str = "claude-s
     import anthropic
     client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
     r = client.messages.create(
-        model=model, max_tokens=600,
+        model=model, max_tokens=2000,
         system=system_prompt,
         messages=[{"role": "user", "content": user_prompt}],
-        temperature=0.5,
+        temperature=0.1,
     )
     return r.content[0].text.strip()
 
 
-def call_ai_json(system_prompt: str, user_prompt: str, preferred_provider: str = "mistral", model: Optional[str] = None) -> tuple:
-    status = get_providers_status()
-    order  = [preferred_provider] + [p for p in ["mistral", "openai", "anthropic"] if p != preferred_provider]
+def _clean_json_response(raw: str) -> str:
+    """Nettoie la reponse IA pour extraire le JSON valide."""
+    cleaned = raw.strip()
+    # Retire les balises markdown
+    if cleaned.startswith("```"):
+        lines   = cleaned.split("\n")
+        start   = 1 if lines[0].startswith("```") else 0
+        end     = len(lines) - 1 if lines[-1].strip() == "```" else len(lines)
+        cleaned = "\n".join(lines[start:end]).strip()
+    # Trouve le premier { et le dernier } pour isoler le JSON
+    start_idx = cleaned.find("{")
+    end_idx   = cleaned.rfind("}")
+    if start_idx != -1 and end_idx != -1:
+        cleaned = cleaned[start_idx:end_idx + 1]
+    return cleaned
+
+
+def call_ai_json(system_prompt: str, user_prompt: str,
+                 preferred_provider: str = "mistral", model: Optional[str] = None) -> tuple:
+    status     = get_providers_status()
+    order      = [preferred_provider] + [p for p in ["mistral", "openai", "anthropic"] if p != preferred_provider]
     last_error = None
 
     for provider in order:
@@ -78,14 +96,11 @@ def call_ai_json(system_prompt: str, user_prompt: str, preferred_provider: str =
             else:
                 raw = _call_anthropic(system_prompt, user_prompt, *([model] if model else []))
 
-            cleaned = raw.strip()
-            if cleaned.startswith("```"):
-                lines   = cleaned.split("\n")
-                start   = 1 if lines[0].startswith("```") else 0
-                end     = -1 if lines[-1].strip() == "```" else len(lines)
-                cleaned = "\n".join(lines[start:end]).strip()
-
+            cleaned = _clean_json_response(raw)
             return json.loads(cleaned), provider
+
+        except json.JSONDecodeError as e:
+            last_error = ValueError(f"JSON invalide ({provider}): {e} — reponse: {raw[:200]}")
         except Exception as e:
             last_error = e
 
