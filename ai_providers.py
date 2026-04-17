@@ -50,7 +50,7 @@ def _call_openai_text(system_prompt: str, user_prompt: str, model: str = "gpt-4o
     return r.choices[0].message.content.strip()
 
 
-def _call_anthropic(system_prompt: str, user_prompt: str, model: str = "claude-sonnet-4-20250514") -> str:
+def _call_anthropic(system_prompt: str, user_prompt: str, model: str = "claude-sonnet-4-5-20251022") -> str:
     import anthropic
     client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
     r = client.messages.create(
