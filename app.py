@@ -143,7 +143,7 @@ def show_notifications():
     if r.get("imported"):
         st.success("CV importes : " + ", ".join(f"**{x['name']}**" for x in r["imported"]))
     if r.get("failed"):
-        with st.expander(f"⚠️ {len(r['failed'])} CV non importe(s)"):
+        with st.expander(f"⚠️ {len(r['failed'])} fichier(s) non importe(s)"):
             for f in r["failed"]:
                 st.warning(f"`{f['filename']}` — {f['error']}")
     dups = db.find_duplicates()
@@ -353,36 +353,34 @@ def show_contact_card(c: dict, rank: int = None, key_prefix: str = ""):
         </div>
         """, unsafe_allow_html=True)
 
-        # PDF
+        # PDF viewer (seulement pour les PDF)
         filename = c.get("cv_filename")
-        if filename and Path(CV_STORAGE_PATH, filename).exists():
+        if filename and Path(CV_STORAGE_PATH, filename).exists() and filename.lower().endswith(".pdf"):
             with st.expander("📄 Voir le CV"):
                 show_pdf(filename)
 
-        # Score detail
         if scores:
             with st.expander("📊 Detail du score"):
                 show_score_detail(scores)
 
-        # Edition
         with st.expander("✏️ Modifier / Supprimer"):
             with st.form(key=f"form_{key_prefix}_{cid}"):
                 r1, r2 = st.columns(2)
-                prenom = r1.text_input("Prenom",    value=c.get("prenom") or "")
-                nom    = r2.text_input("Nom",       value=c.get("nom") or "")
-                email  = r1.text_input("Email",     value=c.get("email") or "")
-                tel    = r2.text_input("Telephone", value=c.get("telephone") or "")
-                poste_e = st.text_input("Poste",    value=c.get("poste") or "")
+                prenom  = r1.text_input("Prenom",    value=c.get("prenom") or "")
+                nom     = r2.text_input("Nom",       value=c.get("nom") or "")
+                email   = r1.text_input("Email",     value=c.get("email") or "")
+                tel     = r2.text_input("Telephone", value=c.get("telephone") or "")
+                poste_e = st.text_input("Poste",     value=c.get("poste") or "")
                 annees_e = st.number_input("Annees", min_value=0, max_value=50,
                                            value=int(c.get("annees_experience") or 0))
-                doms   = st.multiselect("Domaines (max 3)", DOMAINES,
-                                        default=[d for d in c.get("domaines_fonctionnels", []) if d in DOMAINES],
-                                        max_selections=3)
-                comps  = st.text_area("Competences (une par ligne)",
-                                      value="\n".join(c.get("competences", [])), height=80)
-                cs, cd = st.columns([3, 1])
-                saved  = cs.form_submit_button("💾 Sauvegarder", type="primary", use_container_width=True)
-                delet  = cd.form_submit_button("🗑️ Supprimer", use_container_width=True)
+                doms    = st.multiselect("Domaines (max 3)", DOMAINES,
+                                         default=[d for d in c.get("domaines_fonctionnels", []) if d in DOMAINES],
+                                         max_selections=3)
+                comps   = st.text_area("Competences (une par ligne)",
+                                       value="\n".join(c.get("competences", [])), height=80)
+                cs, cd  = st.columns([3, 1])
+                saved   = cs.form_submit_button("💾 Sauvegarder", type="primary", use_container_width=True)
+                delet   = cd.form_submit_button("🗑️ Supprimer", use_container_width=True)
 
             if saved:
                 db.update_contact(cid, {
@@ -401,7 +399,6 @@ def show_contact_card(c: dict, rank: int = None, key_prefix: str = ""):
                 if c.get("cv_filename"): cvp.delete_cv_file(c["cv_filename"])
                 st.rerun()
 
-        # Email / WA
         email_c = c.get("email") or ""
         phone_c = c.get("telephone") or ""
         col_m, col_w, _ = st.columns([1.5, 1.5, 5])
@@ -545,11 +542,17 @@ def page_home():
 
 def page_upload():
     st.markdown('<h1 style="font-family:Syne,sans-serif;font-size:1.8rem;">📤 Upload CV</h1>', unsafe_allow_html=True)
+    st.markdown("Formats acceptes : **PDF, Word (.docx), PowerPoint (.pptx)**")
 
     if "pending" not in st.session_state: st.session_state.pending = {}
     if "errors"  not in st.session_state: st.session_state.errors  = {}
 
-    files = st.file_uploader("Choisir des PDFs", type=["pdf"], accept_multiple_files=True)
+    files = st.file_uploader(
+        "Choisir des fichiers",
+        type=["pdf", "docx", "doc", "pptx", "ppt"],
+        accept_multiple_files=True
+    )
+
     if files:
         if st.button("🤖 Analyser avec l'IA", type="primary"):
             st.session_state.pending = {}
@@ -611,7 +614,6 @@ def page_upload():
                     st.rerun()
                 except Exception as e:
                     st.error(str(e))
-
             if discarded:
                 cvp.delete_cv_file(filename)
                 del st.session_state.pending[filename]
