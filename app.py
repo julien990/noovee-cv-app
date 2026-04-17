@@ -69,7 +69,7 @@ def display_name(c: dict) -> str:
     prenom = c.get("prenom") or ""
     nom    = c.get("nom") or ""
     name   = f"{prenom} {nom}".strip()
-    return name if name else f"Contact #{c['id']}"
+    return name if name else (f"Contact #{c['id']}" if c.get("id") else "Nouveau contact")
 
 def score_css(s):
     return "score-green" if s >= 65 else ("score-orange" if s >= 40 else "score-red")

@@ -1,6 +1,9 @@
 # cv_processor.py
 
-import fitz  # PyMuPDF
+import fitz
+import subprocess
+import shutil
+import os
 from pathlib import Path
 from typing import Optional
 
@@ -33,7 +36,45 @@ def delete_cv_file(filename: str):
         path.unlink()
 
 
-# ── Extraction texte selon le type de fichier ──────────────────────────────────
+# ── Conversion LibreOffice ─────────────────────────────────────────────────────
+
+LIBREOFFICE_PATHS = [
+    "/Applications/LibreOffice.app/Contents/MacOS/soffice",  # Mac
+    "soffice",                                                 # Linux (Railway)
+    "libreoffice",                                             # Linux alternatif
+]
+
+def get_libreoffice_bin() -> Optional[str]:
+    for path in LIBREOFFICE_PATHS:
+        if shutil.which(path) or Path(path).exists():
+            return path
+    return None
+
+
+def convert_to_pdf(input_path: Path) -> Optional[Path]:
+    """
+    Convertit un fichier Word ou PowerPoint en PDF via LibreOffice.
+    Retourne le chemin du PDF cree, ou None si echec.
+    """
+    soffice = get_libreoffice_bin()
+    if not soffice:
+        return None
+
+    output_dir = input_path.parent
+    try:
+        result = subprocess.run(
+            [soffice, "--headless", "--convert-to", "pdf", "--outdir", str(output_dir), str(input_path)],
+            capture_output=True, text=True, timeout=30
+        )
+        pdf_path = output_dir / (input_path.stem + ".pdf")
+        if pdf_path.exists():
+            return pdf_path
+        return None
+    except Exception:
+        return None
+
+
+# ── Extraction texte ───────────────────────────────────────────────────────────
 
 def extract_text_from_pdf(file_bytes: bytes) -> str:
     parts = []
@@ -44,46 +85,69 @@ def extract_text_from_pdf(file_bytes: bytes) -> str:
     return "\n".join(parts).strip()[:MAX_CV_TEXT_CHARS]
 
 
-def extract_text_from_docx(file_bytes: bytes) -> str:
-    import io
-    from docx import Document
-    doc   = Document(io.BytesIO(file_bytes))
-    parts = []
-    for para in doc.paragraphs:
-        if para.text.strip():
-            parts.append(para.text.strip())
-    # Inclure aussi les tableaux
-    for table in doc.tables:
-        for row in table.rows:
-            for cell in row.cells:
-                if cell.text.strip():
-                    parts.append(cell.text.strip())
-    return "\n".join(parts)[:MAX_CV_TEXT_CHARS]
-
-
-def extract_text_from_pptx(file_bytes: bytes) -> str:
-    import io
-    from pptx import Presentation
-    prs   = Presentation(io.BytesIO(file_bytes))
-    parts = []
-    for slide in prs.slides:
-        for shape in slide.shapes:
-            if hasattr(shape, "text") and shape.text.strip():
-                parts.append(shape.text.strip())
-    return "\n".join(parts)[:MAX_CV_TEXT_CHARS]
-
-
 def extract_text_from_file(file_bytes: bytes, filename: str) -> str:
-    """Extrait le texte selon l'extension du fichier."""
+    """
+    Extrait le texte d'un fichier.
+    Pour Word/PowerPoint : convertit d'abord en PDF via LibreOffice.
+    Pour PDF : extraction directe.
+    """
     ext = Path(filename).suffix.lower()
+
     if ext == ".pdf":
         return extract_text_from_pdf(file_bytes)
-    elif ext in (".docx", ".doc"):
-        return extract_text_from_docx(file_bytes)
-    elif ext in (".pptx", ".ppt"):
-        return extract_text_from_pptx(file_bytes)
+
+    elif ext in (".docx", ".doc", ".pptx", ".ppt"):
+        # Sauvegarde temporaire pour LibreOffice
+        tmp_dir  = Path("/tmp/noovee_convert")
+        tmp_dir.mkdir(exist_ok=True)
+        tmp_file = tmp_dir / filename
+
+        with open(tmp_file, "wb") as f:
+            f.write(file_bytes)
+
+        # Tentative de conversion en PDF
+        pdf_path = convert_to_pdf(tmp_file)
+
+        if pdf_path and pdf_path.exists():
+            with open(pdf_path, "rb") as f:
+                text = extract_text_from_pdf(f.read())
+            # Nettoyage
+            tmp_file.unlink(missing_ok=True)
+            pdf_path.unlink(missing_ok=True)
+            return text
+        else:
+            # Fallback : extraction directe sans LibreOffice
+            tmp_file.unlink(missing_ok=True)
+            return extract_text_fallback(file_bytes, ext)
+
     else:
         raise ValueError(f"Format non supporte : {ext}")
+
+
+def extract_text_fallback(file_bytes: bytes, ext: str) -> str:
+    """Extraction de texte sans LibreOffice (fallback)."""
+    import io
+    if ext in (".docx", ".doc"):
+        from docx import Document
+        doc   = Document(io.BytesIO(file_bytes))
+        parts = [p.text.strip() for p in doc.paragraphs if p.text.strip()]
+        for table in doc.tables:
+            for row in table.rows:
+                for cell in row.cells:
+                    if cell.text.strip(): parts.append(cell.text.strip())
+        return "\n".join(parts)[:MAX_CV_TEXT_CHARS]
+
+    elif ext in (".pptx", ".ppt"):
+        from pptx import Presentation
+        prs   = Presentation(io.BytesIO(file_bytes))
+        parts = []
+        for slide in prs.slides:
+            for shape in slide.shapes:
+                if hasattr(shape, "text") and shape.text.strip():
+                    parts.append(shape.text.strip())
+        return "\n".join(parts)[:MAX_CV_TEXT_CHARS]
+
+    return ""
 
 
 # ── Analyse IA ─────────────────────────────────────────────────────────────────
@@ -116,7 +180,8 @@ def _clean(data: dict) -> dict:
 
     ent = data.get("entreprises", [])
     data["entreprises"] = [
-        {"nom": str(e.get("nom","")).strip(), "secteur": str(e.get("secteur","")).strip(), "annees": max(0, int(e.get("annees",0) or 0))}
+        {"nom": str(e.get("nom","")).strip(), "secteur": str(e.get("secteur","")).strip(),
+         "annees": max(0, int(e.get("annees",0) or 0))}
         for e in (ent if isinstance(ent, list) else []) if isinstance(e, dict)
     ]
 
@@ -133,13 +198,9 @@ def _clean(data: dict) -> dict:
 # ── Pipeline upload ────────────────────────────────────────────────────────────
 
 def process_uploaded_cv(uploaded_file) -> tuple:
-    """
-    Pipeline complet pour un fichier uploade (PDF, DOCX, PPTX).
-    Retourne : (donnees_extraites, nom_fichier_sauve, provider_utilise)
-    """
     filename   = save_cv_file(uploaded_file)
-    file_bytes = uploaded_file.getbuffer()
-    cv_text    = extract_text_from_file(bytes(file_bytes), uploaded_file.name)
+    file_bytes = bytes(uploaded_file.getbuffer())
+    cv_text    = extract_text_from_file(file_bytes, uploaded_file.name)
 
     if not cv_text.strip():
         raise ValueError("Le fichier ne contient pas de texte lisible.")
