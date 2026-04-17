@@ -10,6 +10,62 @@ from typing import Optional
 from config import EXTRACTION_SYSTEM_PROMPT, EXTRACTION_USER_TEMPLATE, MAX_CV_TEXT_CHARS, CV_STORAGE_PATH
 from ai_providers import call_ai_json
 
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_KEY = os.getenv("SUPABASE_KEY")
+BUCKET       = "cvs"
+
+
+# ── Supabase Storage ───────────────────────────────────────────────────────────
+
+def get_supabase():
+    if not SUPABASE_URL or not SUPABASE_KEY:
+        return None
+    try:
+        from supabase import create_client
+        return create_client(SUPABASE_URL, SUPABASE_KEY)
+    except Exception:
+        return None
+
+
+def upload_to_supabase(file_bytes: bytes, filename: str) -> bool:
+    """Upload un fichier vers Supabase Storage. Retourne True si succes."""
+    client = get_supabase()
+    if not client:
+        return False
+    try:
+        # Supprime l'ancien si existant
+        client.storage.from_(BUCKET).remove([filename])
+    except Exception:
+        pass
+    try:
+        client.storage.from_(BUCKET).upload(
+            path=filename,
+            file=file_bytes,
+            file_options={"content-type": "application/pdf", "upsert": "true"},
+        )
+        return True
+    except Exception as e:
+        print(f"Supabase upload error: {e}")
+        return False
+
+
+def get_supabase_url(filename: str) -> Optional[str]:
+    """Retourne l'URL publique du fichier dans Supabase Storage."""
+    if not SUPABASE_URL:
+        return None
+    return f"{SUPABASE_URL}/storage/v1/object/public/{BUCKET}/{filename}"
+
+
+def delete_from_supabase(filename: str):
+    client = get_supabase()
+    if not client: return
+    try:
+        client.storage.from_(BUCKET).remove([filename])
+    except Exception:
+        pass
+
+
+# ── Stockage local (fallback) ──────────────────────────────────────────────────
 
 def ensure_storage() -> Path:
     path = Path(CV_STORAGE_PATH)
@@ -18,6 +74,7 @@ def ensure_storage() -> Path:
 
 
 def save_cv_file(uploaded_file) -> str:
+    """Sauvegarde le fichier localement et l'uploade sur Supabase si disponible."""
     storage = ensure_storage()
     dest    = storage / uploaded_file.name
     counter = 1
@@ -25,23 +82,34 @@ def save_cv_file(uploaded_file) -> str:
     while dest.exists():
         dest = storage / f"{stem}_{counter}{suffix}"
         counter += 1
+
+    file_bytes = bytes(uploaded_file.getbuffer())
+
+    # Sauvegarde locale
     with open(dest, "wb") as f:
-        f.write(uploaded_file.getbuffer())
+        f.write(file_bytes)
+
+    # Upload Supabase (PDF uniquement)
+    if suffix.lower() == ".pdf":
+        upload_to_supabase(file_bytes, dest.name)
+
     return dest.name
 
 
 def delete_cv_file(filename: str):
+    """Supprime le fichier localement et sur Supabase."""
     path = Path(CV_STORAGE_PATH) / filename
     if path.exists():
         path.unlink()
+    delete_from_supabase(filename)
 
 
 # ── Conversion LibreOffice ─────────────────────────────────────────────────────
 
 LIBREOFFICE_PATHS = [
-    "/Applications/LibreOffice.app/Contents/MacOS/soffice",  # Mac
-    "soffice",                                                 # Linux (Railway)
-    "libreoffice",                                             # Linux alternatif
+    "/Applications/LibreOffice.app/Contents/MacOS/soffice",
+    "soffice",
+    "libreoffice",
 ]
 
 def get_libreoffice_bin() -> Optional[str]:
@@ -52,24 +120,17 @@ def get_libreoffice_bin() -> Optional[str]:
 
 
 def convert_to_pdf(input_path: Path) -> Optional[Path]:
-    """
-    Convertit un fichier Word ou PowerPoint en PDF via LibreOffice.
-    Retourne le chemin du PDF cree, ou None si echec.
-    """
     soffice = get_libreoffice_bin()
     if not soffice:
         return None
-
     output_dir = input_path.parent
     try:
-        result = subprocess.run(
+        subprocess.run(
             [soffice, "--headless", "--convert-to", "pdf", "--outdir", str(output_dir), str(input_path)],
             capture_output=True, text=True, timeout=30
         )
         pdf_path = output_dir / (input_path.stem + ".pdf")
-        if pdf_path.exists():
-            return pdf_path
-        return None
+        return pdf_path if pdf_path.exists() else None
     except Exception:
         return None
 
@@ -86,18 +147,12 @@ def extract_text_from_pdf(file_bytes: bytes) -> str:
 
 
 def extract_text_from_file(file_bytes: bytes, filename: str) -> str:
-    """
-    Extrait le texte d'un fichier.
-    Pour Word/PowerPoint : convertit d'abord en PDF via LibreOffice.
-    Pour PDF : extraction directe.
-    """
     ext = Path(filename).suffix.lower()
 
     if ext == ".pdf":
         return extract_text_from_pdf(file_bytes)
 
     elif ext in (".docx", ".doc", ".pptx", ".ppt"):
-        # Sauvegarde temporaire pour LibreOffice
         tmp_dir  = Path("/tmp/noovee_convert")
         tmp_dir.mkdir(exist_ok=True)
         tmp_file = tmp_dir / filename
@@ -105,27 +160,26 @@ def extract_text_from_file(file_bytes: bytes, filename: str) -> str:
         with open(tmp_file, "wb") as f:
             f.write(file_bytes)
 
-        # Tentative de conversion en PDF
         pdf_path = convert_to_pdf(tmp_file)
 
         if pdf_path and pdf_path.exists():
             with open(pdf_path, "rb") as f:
-                text = extract_text_from_pdf(f.read())
-            # Nettoyage
+                pdf_bytes = f.read()
+            text = extract_text_from_pdf(pdf_bytes)
+            # Upload le PDF converti sur Supabase
+            pdf_name = tmp_file.stem + ".pdf"
+            upload_to_supabase(pdf_bytes, pdf_name)
             tmp_file.unlink(missing_ok=True)
             pdf_path.unlink(missing_ok=True)
             return text
         else:
-            # Fallback : extraction directe sans LibreOffice
             tmp_file.unlink(missing_ok=True)
             return extract_text_fallback(file_bytes, ext)
-
     else:
         raise ValueError(f"Format non supporte : {ext}")
 
 
 def extract_text_fallback(file_bytes: bytes, ext: str) -> str:
-    """Extraction de texte sans LibreOffice (fallback)."""
     import io
     if ext in (".docx", ".doc"):
         from docx import Document
@@ -136,7 +190,6 @@ def extract_text_fallback(file_bytes: bytes, ext: str) -> str:
                 for cell in row.cells:
                     if cell.text.strip(): parts.append(cell.text.strip())
         return "\n".join(parts)[:MAX_CV_TEXT_CHARS]
-
     elif ext in (".pptx", ".ppt"):
         from pptx import Presentation
         prs   = Presentation(io.BytesIO(file_bytes))
@@ -146,7 +199,6 @@ def extract_text_fallback(file_bytes: bytes, ext: str) -> str:
                 if hasattr(shape, "text") and shape.text.strip():
                     parts.append(shape.text.strip())
         return "\n".join(parts)[:MAX_CV_TEXT_CHARS]
-
     return ""
 
 
@@ -211,7 +263,26 @@ def process_uploaded_cv(uploaded_file) -> tuple:
     return data, filename, provider
 
 
-# ── Scan automatique au demarrage ──────────────────────────────────────────────
+# ── Affichage PDF ──────────────────────────────────────────────────────────────
+
+def get_pdf_url(filename: str) -> Optional[str]:
+    """
+    Retourne l'URL pour afficher le PDF :
+    1. Supabase Storage (prioritaire, persiste)
+    2. Fichier local (fallback)
+    """
+    # Essaie Supabase d'abord
+    url = get_supabase_url(filename)
+    if url:
+        return url
+    # Fallback local
+    path = Path(CV_STORAGE_PATH) / filename
+    if path.exists():
+        return None  # Sera gere par le lecteur local
+    return None
+
+
+# ── Scan automatique ───────────────────────────────────────────────────────────
 
 def scan_and_import_new_cvs() -> dict:
     import database as db
@@ -230,12 +301,15 @@ def scan_and_import_new_cvs() -> dict:
                 file_bytes = f.read()
             cv_text = extract_text_from_file(file_bytes, file_path.name)
             if not cv_text.strip():
-                report["failed"].append({"filename": file_path.name, "error": "Fichier vide ou non lisible"})
+                report["failed"].append({"filename": file_path.name, "error": "Fichier vide"})
                 continue
             data, provider = analyze_cv_with_ai(cv_text)
             data["texte_brut"]  = cv_text
             data["cv_filename"] = file_path.name
             db.insert_contact(data)
+            # Upload sur Supabase si PDF
+            if file_path.suffix.lower() == ".pdf":
+                upload_to_supabase(file_bytes, file_path.name)
             name = f"{data.get('prenom') or ''} {data.get('nom') or ''}".strip() or file_path.name
             report["imported"].append({"filename": file_path.name, "name": name, "provider": provider})
         except Exception as e:

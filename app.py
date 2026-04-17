@@ -35,98 +35,18 @@ if not st.session_state.startup_done:
         st.session_state.startup_report = cvp.scan_and_import_new_cvs()
     st.session_state.startup_done = True
 
-# ── CSS ────────────────────────────────────────────────────────────────────────
+# ── CSS minimal — uniquement pour la sidebar et les boutons ───────────────────
 st.markdown(f"""
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:wght@300;400;500;600&display=swap');
-  html, body, [class*="css"] {{ font-family:'DM Sans',sans-serif; background:{COLORS['background']}; color:{COLORS['text']}; }}
-  h1,h2,h3 {{ font-family:'Syne',sans-serif; }}
+  html, body, [class*="css"] {{ font-family:'DM Sans',sans-serif; }}
+  h1,h2,h3,h4 {{ font-family:'Syne',sans-serif !important; }}
   section[data-testid="stSidebar"] {{ background:{COLORS['primary']}; }}
   section[data-testid="stSidebar"] * {{ color:#fff !important; }}
-
-  /* Carte contact — bordure via CSS, pas via border=True */
-  .contact-card {{
-      background: {COLORS['card']};
-      border: 1px solid {COLORS['border']};
-      border-radius: 12px;
-      padding: 16px 20px;
-      margin-bottom: 8px;
-      box-shadow: 0 1px 4px rgba(0,0,0,0.06);
-  }}
-  .contact-card.selected {{
-      border: 2px solid {COLORS['primary']};
-      background: #F0FDF4;
-  }}
-
-  /* Boutons primaires */
   div.stButton > button[kind="primary"] {{
-      background: {COLORS['primary']} !important;
-      color: white !important;
-      border: none !important;
-      border-radius: 8px !important;
-      font-weight: 600 !important;
-  }}
-
-  /* Tags */
-  .tag-domain {{
-      display:inline-block; background:#DCFCE7; color:{COLORS['primary']};
-      border:1px solid #BBF7D0; border-radius:6px;
-      padding:2px 10px; font-size:0.78rem; font-weight:600; margin:2px;
-  }}
-  .tag-skill {{
-      display:inline-block; background:#EEF2FF; color:{COLORS['indigo']};
-      border:1px solid #C7D2FE; border-radius:6px;
-      padding:2px 10px; font-size:0.76rem; font-weight:500; margin:2px;
-  }}
-
-  /* Scores */
-  .score-green {{
-      display:inline-block; background:#DCFCE7; color:#166534;
-      border:2px solid #86EFAC; border-radius:50%;
-      width:52px; height:52px; line-height:48px; text-align:center;
-      font-family:'Syne',sans-serif; font-size:1rem; font-weight:800;
-  }}
-  .score-orange {{
-      display:inline-block; background:#FEF3C7; color:#92400E;
-      border:2px solid #FDE68A; border-radius:50%;
-      width:52px; height:52px; line-height:48px; text-align:center;
-      font-family:'Syne',sans-serif; font-size:1rem; font-weight:800;
-  }}
-  .score-gray {{
-      display:inline-block; background:#F1F5F9; color:#64748B;
-      border:2px solid #CBD5E1; border-radius:50%;
-      width:52px; height:52px; line-height:48px; text-align:center;
-      font-family:'Syne',sans-serif; font-size:1rem; font-weight:800;
-  }}
-
-  /* Pills */
-  .pill-provider {{
-      display:inline-block; background:{COLORS['primary']}; color:white;
-      border-radius:20px; padding:2px 12px; font-size:0.73rem; font-weight:600;
-  }}
-  .pill-mult {{
-      display:inline-block; background:#4F46E5; color:white;
-      border-radius:20px; padding:2px 12px; font-size:0.73rem; font-weight:700;
-  }}
-  .rank-dot {{
-      display:inline-flex; align-items:center; justify-content:center;
-      width:26px; height:26px; border-radius:50%;
-      background:{COLORS['primary']}; color:white;
-      font-family:'Syne',sans-serif; font-size:0.82rem; font-weight:700;
-  }}
-
-  /* Misc */
-  .exp-row {{
-      background:#F8FAFC; border:1px solid {COLORS['border']};
-      border-radius:8px; padding:6px 12px; margin:3px 0; font-size:0.83rem;
-  }}
-  .campaign-header {{
-      background:{COLORS['primary']}; color:white;
-      border-radius:10px; padding:12px 18px; margin-bottom:14px;
-  }}
-  .dup-card {{
-      background:#FFFBEB; border:1px solid #FDE68A;
-      border-radius:10px; padding:10px 16px; margin:4px 0;
+      background:{COLORS['primary']} !important;
+      color:white !important; border:none !important;
+      border-radius:8px !important; font-weight:600 !important;
   }}
 </style>
 """, unsafe_allow_html=True)
@@ -140,10 +60,10 @@ def display_name(c: dict) -> str:
     name   = f"{prenom} {nom}".strip()
     return name if name else (f"Contact #{c['id']}" if c.get("id") else "Nouveau contact")
 
-def score_class(s):
-    if s >= 65: return "score-green"
-    if s >= 40: return "score-orange"
-    return "score-gray"
+def score_emoji(s):
+    if s >= 65: return "🟢"
+    if s >= 40: return "🟡"
+    return "⚪"
 
 def wa_number(phone):
     if not phone: return ""
@@ -151,20 +71,27 @@ def wa_number(phone):
     return "33" + d[1:] if d.startswith("0") and len(d) == 10 else d
 
 def show_pdf(filename):
-    path = Path(CV_STORAGE_PATH) / filename
-    if not path.exists():
-        st.info("📄 Fichier non disponible sur ce serveur. Uploadez-le a nouveau pour le visualiser.")
+    # Priorite 1 : URL Supabase publique (persiste entre redemarrages)
+    supabase_url = cvp.get_supabase_url(filename)
+    if supabase_url:
+        st.markdown(
+            f'<iframe src="{supabase_url}" width="100%" height="680" '
+            f'style="border-radius:10px;"></iframe>',
+            unsafe_allow_html=True,
+        )
         return
-    with open(path, "rb") as f:
-        b64 = base64.b64encode(f.read()).decode()
-    st.markdown(
-        f'<iframe src="data:application/pdf;base64,{b64}" width="100%" height="680" '
-        f'style="border:1px solid {COLORS["border"]};border-radius:10px;"></iframe>',
-        unsafe_allow_html=True,
-    )
-
-def tags_html(items, css_class):
-    return " ".join(f'<span class="{css_class}">{x}</span>' for x in items)
+    # Priorite 2 : fichier local
+    path = Path(CV_STORAGE_PATH) / filename
+    if path.exists():
+        with open(path, "rb") as f:
+            b64 = base64.b64encode(f.read()).decode()
+        st.markdown(
+            f'<iframe src="data:application/pdf;base64,{b64}" width="100%" height="680" '
+            f'style="border-radius:10px;"></iframe>',
+            unsafe_allow_html=True,
+        )
+        return
+    st.info("Fichier non disponible. Uploadez-le a nouveau pour le visualiser.")
 
 def current_context():
     for key in ("ao_criteria", "ai_criteria"):
@@ -184,27 +111,27 @@ def current_context():
 # ── Sidebar ────────────────────────────────────────────────────────────────────
 
 with st.sidebar:
-    st.markdown('<h1 style="font-family:Syne,sans-serif;font-size:1.5rem;margin-bottom:2px;">🟢 Noovee</h1>', unsafe_allow_html=True)
-    st.markdown('<p style="font-size:0.78rem;opacity:0.7;margin-top:0;">Base de Contacts IA</p>', unsafe_allow_html=True)
-    st.markdown("---")
+    st.markdown("### 🟢 Noovee")
+    st.caption("Base de Contacts IA")
+    st.divider()
     page = st.radio("Navigation",
         ["🏠 Accueil", "📤 Upload CV", "👥 Base de Contacts"],
         label_visibility="collapsed")
-    st.markdown("---")
+    st.divider()
     status = get_providers_status()
     st.markdown("**Providers IA**")
     for k in ["mistral", "openai", "anthropic"]:
         st.markdown(f"{'🟢' if status[k] else '🔴'} {k.capitalize()}")
-    st.markdown("---")
+    st.divider()
     st.metric("Contacts", db.count_contacts())
     n_sel = len(st.session_state.selected_ids)
     if n_sel:
         st.markdown(f"**{n_sel} selectionne(s)**")
-    st.markdown("---")
+    st.divider()
     if st.button("🔄 Re-scanner", use_container_width=True):
         st.session_state.startup_done = False
         st.rerun()
-    st.markdown("---")
+    st.divider()
     if st.session_state.confirm_reset:
         st.warning("⚠️ Confirmer ?")
         col_ok, col_no = st.columns(2)
@@ -212,9 +139,8 @@ with st.sidebar:
             for c in db.get_all_contacts():
                 db.delete_contact(c["id"])
                 if c.get("cv_filename"): cvp.delete_cv_file(c["cv_filename"])
-            st.session_state.confirm_reset     = False
-            st.session_state.selected_ids      = set()
-            st.session_state.campaign_messages = {}
+            st.session_state.confirm_reset = False
+            st.session_state.selected_ids  = set()
             st.rerun()
         if col_no.button("❌ Non", use_container_width=True):
             st.session_state.confirm_reset = False
@@ -225,7 +151,7 @@ with st.sidebar:
             st.rerun()
 
 
-# ── Notifications + doublons avec selection multiple ───────────────────────────
+# ── Notifications + doublons ───────────────────────────────────────────────────
 
 def show_notifications():
     r = st.session_state.get("startup_report") or {}
@@ -239,31 +165,24 @@ def show_notifications():
     dups = db.find_duplicates()
     if not dups: return
 
-    with st.expander(f"⚠️ {len(dups)} doublon(s) detecte(s) — cliquez pour gerer"):
-        st.caption("Cochez les contacts a supprimer puis cliquez Supprimer la selection.")
-
-        # Bouton suppression en masse
+    with st.expander(f"⚠️ {len(dups)} doublon(s) detecte(s)"):
         if st.session_state.dup_selected:
             n_dup = len(st.session_state.dup_selected)
-            if st.button(f"🗑️ Supprimer {n_dup} contact(s) selectionne(s)", type="primary"):
+            if st.button(f"🗑️ Supprimer {n_dup} selectionne(s)", type="primary"):
                 for cid in list(st.session_state.dup_selected):
-                    c = next((x for x in db.get_all_contacts() if x["id"] == cid), None)
+                    all_c = db.get_all_contacts()
+                    c = next((x for x in all_c if x["id"] == cid), None)
                     if c:
                         db.delete_contact(cid)
                         if c.get("cv_filename"): cvp.delete_cv_file(c["cv_filename"])
                 st.session_state.dup_selected = set()
-                st.success("Contacts supprimes.")
                 st.rerun()
-
-        st.markdown("---")
-
+        st.divider()
         for gi, group in enumerate(dups):
             names = " / ".join(display_name(c) for c in group)
-            st.markdown(f'<div class="dup-card"><b>⚠️ Doublon :</b> {names}</div>', unsafe_allow_html=True)
-
+            st.warning(f"⚠️ Doublon : {names}")
             for c in group:
                 cid  = c["id"]
-                name = display_name(c)
                 col_chk, col_info = st.columns([0.5, 9])
                 with col_chk:
                     checked = st.checkbox("", value=cid in st.session_state.dup_selected,
@@ -271,9 +190,8 @@ def show_notifications():
                     if checked: st.session_state.dup_selected.add(cid)
                     else:       st.session_state.dup_selected.discard(cid)
                 with col_info:
-                    st.write(f"**{name}** · {c.get('poste','—')} · {c.get('email','—')} · _{c.get('created_at','')[:10]}_")
-
-            st.markdown("---")
+                    st.write(f"**{display_name(c)}** · {c.get('poste','—')} · {c.get('email','—')} · _{c.get('created_at','')[:10]}_")
+            st.divider()
 
 
 # ── Score detail ───────────────────────────────────────────────────────────────
@@ -283,22 +201,20 @@ def show_score_detail(scores: dict):
     c1.metric("🎯 Competences", f"{scores['competences']}/100")
     c2.metric("📅 Anciennete",  f"{scores['anciennete']}/100")
     c3.metric("🏢 Domaine",     f"{scores['domaine']}/100")
-    st.markdown("---")
+
     nb_exp    = scores.get("nb_exp_match", 0)
     mult      = scores.get("multiplicateur", 1.0)
     comp_base = scores.get("comp_base", scores["competences"])
+
     if nb_exp > 0:
         pct = int((mult - 1.0) * 100)
-        st.markdown(
-            f'<span class="pill-mult">🔁 x{mult} profondeur</span>'
-            f'&nbsp; {nb_exp} experience(s) — +{pct}% ({comp_base} → {scores["competences"]})',
-            unsafe_allow_html=True,
-        )
+        st.info(f"🔁 x{mult} profondeur · {nb_exp} experience(s) pertinente(s) · +{pct}% ({comp_base} → {scores['competences']})")
         for exp in scores.get("exp_detail", []):
             label = exp.get("poste", "—")
             if exp.get("entreprise"): label += f" — {exp['entreprise']}"
             if exp.get("annees"):     label += f" ({exp['annees']} an{'s' if exp['annees'] > 1 else ''})"
-            st.markdown(f'<div class="exp-row">✅ {label} · {exp.get("matches",0)} mot(s)</div>', unsafe_allow_html=True)
+            st.write(f"✅ {label} · {exp.get('matches',0)} mot(s)")
+
     if scores.get("bonus_domaine"):
         st.caption("✨ Bonus domaine (+8 pts)")
     if scores.get("mots_trouves"):
@@ -310,11 +226,7 @@ def show_score_detail(scores: dict):
 def show_campaign_bar():
     n = len(st.session_state.selected_ids)
     if not n: return
-    st.markdown(
-        f'<div class="campaign-header"><span style="font-family:Syne,sans-serif;font-size:1.05rem;font-weight:700;">'
-        f'✅ {n} contact{"s" if n > 1 else ""} selectionne{"s" if n > 1 else ""}</span></div>',
-        unsafe_allow_html=True,
-    )
+    st.info(f"✅ **{n} contact{'s' if n > 1 else ''} selectionne{'s' if n > 1 else ''}**")
     c1, c2, _ = st.columns([2, 1.5, 5])
     with c1:
         if st.button("📧 Preparer la campagne", type="primary", use_container_width=True):
@@ -334,7 +246,7 @@ def show_campaign_panel():
     selected = [c for c in db.get_all_contacts() if c["id"] in st.session_state.selected_ids]
     if not selected: return
 
-    st.markdown('<h3 style="font-family:Syne,sans-serif;">📧 Campagne email</h3>', unsafe_allow_html=True)
+    st.subheader("📧 Campagne email")
     ca, cb, cc = st.columns(3)
     mission = ca.text_area("Mission", value=current_context(), height=100, key="camp_mission")
     lieu    = cb.text_input("Lieu", placeholder="Ex : Paris / Full remote", key="camp_lieu")
@@ -343,7 +255,7 @@ def show_campaign_panel():
     if lieu:  context_full += f"\nLieu : {lieu}"
     if duree: context_full += f"\nDuree : {duree}"
 
-    st.markdown("---")
+    st.divider()
     cg, _ = st.columns([2, 5])
     with cg:
         gen_all = st.button(
@@ -379,7 +291,7 @@ def show_campaign_panel():
                 else:
                     st.warning("Email non renseigne.")
         if mailto_list:
-            st.markdown("---")
+            st.divider()
             links_js = json.dumps(mailto_list)
             components.html(f"""
             <button onclick="openAll()" style="background:{COLORS['primary']};color:white;border:none;
@@ -398,10 +310,10 @@ def show_campaign_panel():
             }}
             </script>
             """, height=55)
-    st.markdown("---")
+    st.divider()
 
 
-# ── Carte contact ──────────────────────────────────────────────────────────────
+# ── Carte contact — 100% composants natifs Streamlit ──────────────────────────
 
 def show_contact_card(c: dict, rank: int = None, key_prefix: str = ""):
     cid    = c["id"]
@@ -423,92 +335,89 @@ def show_contact_card(c: dict, rank: int = None, key_prefix: str = ""):
         else:       st.session_state.selected_ids.discard(cid)
 
     with card_col:
-        # Carte via HTML pur (pas de border=True -> pas de rouge)
-        cls = "contact-card selected" if is_sel else "contact-card"
-        rank_html = f'<span class="rank-dot">#{rank}</span>&nbsp;' if rank else ""
-        mult_html = ""
-        if scores and scores.get("multiplicateur", 1.0) > 1.0:
-            mult_html = f'&nbsp;<span class="pill-mult">x{scores["multiplicateur"]} ({scores.get("nb_exp_match",0)} exp.)</span>'
-        score_html = ""
-        if scores:
-            s = scores["total"]
-            score_html = f'<div class="{score_class(s)}" style="float:right;margin-top:-4px;">{s}</div>'
+        with st.container(border=True):
+            col_info, col_score = st.columns([9, 1])
 
-        dom_html  = tags_html(doms, "tag-domain") if doms else ""
-        comp_html = tags_html(comps, "tag-skill") if comps else ""
+            with col_info:
+                rank_str = f"**#{rank}**  " if rank else ""
+                mult_str = ""
+                if scores and scores.get("multiplicateur", 1.0) > 1.0:
+                    mult_str = f"  ·  🔁 x{scores['multiplicateur']} ({scores.get('nb_exp_match',0)} exp.)"
+                # Nom + poste en une ligne — texte pur, pas de HTML
+                st.markdown(f"{rank_str}**{name}**  \n_{poste} · {annees} ans{mult_str}_")
+                # Domaines
+                if doms:
+                    st.write("🏷️ " + "  ·  ".join(doms))
+                # Competences
+                if comps:
+                    st.write("🔧 " + "  ·  ".join(comps))
 
-        st.markdown(f"""
-        <div class="{cls}">
-            {score_html}
-            <div>
-                {rank_html}
-                <strong style="font-family:Syne,sans-serif;font-size:1.05rem;">{name}</strong>
-                &nbsp;<span style="color:{COLORS['muted']};font-size:0.87rem;">{poste} · {annees} ans</span>
-                {mult_html}
-            </div>
-            <div style="margin-top:7px;">{dom_html}</div>
-            <div style="margin-top:5px;">{comp_html}</div>
-        </div>
-        """, unsafe_allow_html=True)
+            with col_score:
+                if scores:
+                    s = scores["total"]
+                    st.metric("", f"{score_emoji(s)} {s}")
 
-        # Actions via expanders
-        filename = c.get("cv_filename")
-        if filename:
-            with st.expander("📄 Voir le CV"):
-                show_pdf(filename)
+            # CV
+            filename = c.get("cv_filename")
+            if filename:
+                with st.expander("📄 Voir le CV"):
+                    show_pdf(filename)
 
-        if scores:
-            with st.expander("📊 Detail du score"):
-                show_score_detail(scores)
+            # Score
+            if scores:
+                with st.expander("📊 Detail du score"):
+                    show_score_detail(scores)
 
-        with st.expander("✏️ Modifier / Supprimer"):
-            with st.form(key=f"editform_{cid}"):
-                r1, r2 = st.columns(2)
-                prenom  = r1.text_input("Prenom",    value=c.get("prenom") or "")
-                nom_v   = r2.text_input("Nom",       value=c.get("nom") or "")
-                email_v = r1.text_input("Email",     value=c.get("email") or "")
-                tel_v   = r2.text_input("Telephone", value=c.get("telephone") or "")
-                poste_v = st.text_input("Poste",     value=c.get("poste") or "")
-                ann_v   = st.number_input("Annees d'experience", min_value=0, max_value=50,
-                                           value=int(c.get("annees_experience") or 0))
-                doms_v  = st.multiselect("Domaines (max 3)", DOMAINES,
-                                          default=[d for d in c.get("domaines_fonctionnels", []) if d in DOMAINES],
-                                          max_selections=3)
-                comp_v  = st.text_area("Competences (une par ligne)",
-                                       value="\n".join(c.get("competences", [])), height=80)
-                cs, cd  = st.columns([3, 1])
-                saved   = cs.form_submit_button("💾 Sauvegarder", type="primary", use_container_width=True)
-                delet   = cd.form_submit_button("🗑️ Supprimer", use_container_width=True)
+            # Modifier
+            with st.expander("✏️ Modifier / Supprimer"):
+                with st.form(key=f"editform_{cid}"):
+                    r1, r2 = st.columns(2)
+                    prenom  = r1.text_input("Prenom",    value=c.get("prenom") or "")
+                    nom_v   = r2.text_input("Nom",       value=c.get("nom") or "")
+                    email_v = r1.text_input("Email",     value=c.get("email") or "")
+                    tel_v   = r2.text_input("Telephone", value=c.get("telephone") or "")
+                    poste_v = st.text_input("Poste",     value=c.get("poste") or "")
+                    ann_v   = st.number_input("Annees d'experience", min_value=0, max_value=50,
+                                               value=int(c.get("annees_experience") or 0))
+                    doms_v  = st.multiselect("Domaines (max 3)", DOMAINES,
+                                              default=[d for d in c.get("domaines_fonctionnels", []) if d in DOMAINES],
+                                              max_selections=3)
+                    comp_v  = st.text_area("Competences (une par ligne)",
+                                           value="\n".join(c.get("competences", [])), height=80)
+                    cs, cd  = st.columns([3, 1])
+                    saved   = cs.form_submit_button("💾 Sauvegarder", type="primary", use_container_width=True)
+                    delet   = cd.form_submit_button("🗑️ Supprimer", use_container_width=True)
 
-            if saved:
-                db.update_contact(cid, {
-                    **c,
-                    "prenom": prenom.strip() or None, "nom": nom_v.strip() or None,
-                    "email": email_v.strip() or None, "telephone": tel_v.strip() or None,
-                    "poste": poste_v.strip() or None, "annees_experience": int(ann_v),
-                    "domaines_fonctionnels": doms_v,
-                    "competences": [x.strip() for x in comp_v.split("\n") if x.strip()],
-                })
-                st.success("✅ Modifications sauvegardees !")
-                st.rerun()
-            if delet:
-                db.delete_contact(cid)
-                if c.get("cv_filename"): cvp.delete_cv_file(c["cv_filename"])
-                st.rerun()
+                if saved:
+                    db.update_contact(cid, {
+                        **c,
+                        "prenom": prenom.strip() or None, "nom": nom_v.strip() or None,
+                        "email": email_v.strip() or None, "telephone": tel_v.strip() or None,
+                        "poste": poste_v.strip() or None, "annees_experience": int(ann_v),
+                        "domaines_fonctionnels": doms_v,
+                        "competences": [x.strip() for x in comp_v.split("\n") if x.strip()],
+                    })
+                    st.success("✅ Sauvegarde !")
+                    st.rerun()
+                if delet:
+                    db.delete_contact(cid)
+                    if c.get("cv_filename"): cvp.delete_cv_file(c["cv_filename"])
+                    st.rerun()
 
-        with st.expander("📬 Contacter"):
-            email_c = c.get("email") or ""
-            phone_c = c.get("telephone") or ""
-            if email_c:
-                subject = quote(f"Opportunite pour {name}")
-                st.link_button("📧 Ouvrir dans Outlook", f"mailto:{email_c}?subject={subject}", use_container_width=True)
-            else:
-                st.warning("Email non renseigne.")
-            wa = wa_number(phone_c)
-            if wa:
-                st.link_button("💬 Ouvrir WhatsApp", f"https://wa.me/{wa}", use_container_width=True)
-            else:
-                st.warning("Telephone non renseigne.")
+            # Contacter
+            with st.expander("📬 Contacter"):
+                email_c = c.get("email") or ""
+                phone_c = c.get("telephone") or ""
+                if email_c:
+                    subject = quote(f"Opportunite pour {name}")
+                    st.link_button("📧 Ouvrir dans Outlook", f"mailto:{email_c}?subject={subject}", use_container_width=True)
+                else:
+                    st.warning("Email non renseigne.")
+                wa = wa_number(phone_c)
+                if wa:
+                    st.link_button("💬 Ouvrir WhatsApp", f"https://wa.me/{wa}", use_container_width=True)
+                else:
+                    st.warning("Telephone non renseigne.")
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -516,7 +425,7 @@ def show_contact_card(c: dict, rank: int = None, key_prefix: str = ""):
 # ══════════════════════════════════════════════════════════════════════════════
 
 def page_home():
-    st.markdown('<h1 style="font-family:Syne,sans-serif;">🏠 Recherche & Matching</h1>', unsafe_allow_html=True)
+    st.title("🏠 Recherche & Matching")
     show_notifications()
     contacts = db.get_all_contacts()
     if not contacts:
@@ -540,13 +449,11 @@ def page_home():
             else:
                 crit_local = sc.keyword_criteria(query)
                 ranked     = sc.rank_contacts(results, crit_local, top_n=top_n)
-
-                # Afficher le domaine detecte
                 doms_detectes = crit_local.get("domaines", [])
+                caption = f"**{len(ranked)} profil(s)**"
                 if doms_detectes:
-                    st.caption(f"**{len(ranked)} profil(s)** · Domaine detecte : {' · '.join(doms_detectes)}")
-                else:
-                    st.caption(f"**{len(ranked)} profil(s)** — tries par pertinence")
+                    caption += f" · Domaine detecte : {' · '.join(doms_detectes)}"
+                st.caption(caption)
 
                 ca, _ = st.columns([2, 5])
                 with ca:
@@ -569,7 +476,7 @@ def page_home():
                     poste_ia = ai_crit.get("poste","—")
                     doms_ia  = " · ".join(ai_crit.get("domaines",[]))
                     prov_ia  = ai_crit.get("_provider","?").capitalize()
-                    st.info(f"🤖 **IA** via {prov_ia} — Poste : {poste_ia}" + (f" · Domaines : {doms_ia}" if doms_ia else ""))
+                    st.info(f"🤖 **IA** via {prov_ia} — Poste : {poste_ia}" + (f" · {doms_ia}" if doms_ia else ""))
                     for i, c in enumerate(ai_res, 1):
                         show_contact_card(c, rank=i, key_prefix=f"ai{i}")
                 else:
@@ -610,8 +517,8 @@ def page_home():
             with col_b:
                 if crit.get("domaines"):  st.write("**Domaines :** " + " · ".join(crit["domaines"]))
                 if crit.get("mots_cles"): st.write("**Mots-cles :** " + " · ".join(crit["mots_cles"][:12]))
-            st.markdown(f'<span class="pill-provider">via {crit.get("_provider","?").capitalize()}</span>', unsafe_allow_html=True)
-            st.markdown("---")
+            st.caption(f"Analyse via {crit.get('_provider','?').capitalize()}")
+            st.divider()
 
             with st.spinner("Scoring..."):
                 ranked = sc.rank_contacts(contacts, crit, top_n=top_ao)
@@ -619,7 +526,7 @@ def page_home():
             if not ranked:
                 st.info("Aucun profil correspondant.")
             else:
-                st.markdown(f'<h3 style="font-family:Syne,sans-serif;">🏆 Top {len(ranked)} profils</h3>', unsafe_allow_html=True)
+                st.subheader(f"🏆 Top {len(ranked)} profils")
                 for i, c in enumerate(ranked, 1):
                     show_contact_card(c, rank=i, key_prefix=f"ao{i}")
 
@@ -629,7 +536,7 @@ def page_home():
 # ══════════════════════════════════════════════════════════════════════════════
 
 def page_upload():
-    st.markdown('<h1 style="font-family:Syne,sans-serif;">📤 Upload CV</h1>', unsafe_allow_html=True)
+    st.title("📤 Upload CV")
     st.write("Formats acceptes : **PDF, Word (.docx), PowerPoint (.pptx)**")
 
     if "pending" not in st.session_state: st.session_state.pending = {}
@@ -659,7 +566,7 @@ def page_upload():
     for filename, data in list(st.session_state.pending.items()):
         name = display_name(data) or filename
         with st.expander(f"📋 {name}", expanded=True):
-            st.markdown(f'<span class="pill-provider">via {data.get("_provider","?").capitalize()}</span>', unsafe_allow_html=True)
+            st.caption(f"Extrait via {data.get('_provider','?').capitalize()}")
             with st.form(key=f"form_confirm_{filename}"):
                 c1, c2 = st.columns(2)
                 prenom = c1.text_input("Prenom",    value=data.get("prenom") or "")
@@ -711,7 +618,7 @@ def page_upload():
 # ══════════════════════════════════════════════════════════════════════════════
 
 def page_contacts():
-    st.markdown('<h1 style="font-family:Syne,sans-serif;">👥 Base de Contacts</h1>', unsafe_allow_html=True)
+    st.title("👥 Base de Contacts")
     show_campaign_bar()
     show_campaign_panel()
     contacts = db.get_all_contacts()
