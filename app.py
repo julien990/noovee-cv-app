@@ -27,6 +27,7 @@ if "startup_report"    not in st.session_state: st.session_state.startup_report 
 if "selected_ids"      not in st.session_state: st.session_state.selected_ids      = set()
 if "campaign_messages" not in st.session_state: st.session_state.campaign_messages = {}
 if "campaign_open"     not in st.session_state: st.session_state.campaign_open     = False
+if "confirm_reset"     not in st.session_state: st.session_state.confirm_reset     = False
 
 if not st.session_state.startup_done:
     with st.spinner("Scan du dossier CV..."):
@@ -37,170 +38,75 @@ if not st.session_state.startup_done:
 st.markdown(f"""
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:wght@300;400;500;600&display=swap');
-
-  html, body, [class*="css"] {{
-      font-family: 'DM Sans', sans-serif;
-      background: {COLORS['background']};
-      color: {COLORS['text']};
-  }}
-  h1, h2, h3 {{ font-family: 'Syne', sans-serif; }}
-
-  section[data-testid="stSidebar"] {{ background: {COLORS['primary']}; }}
-  section[data-testid="stSidebar"] * {{ color: #fff !important; }}
-
-  /* Conteneur de carte */
+  html, body, [class*="css"] {{ font-family:'DM Sans',sans-serif; background:{COLORS['background']}; color:{COLORS['text']}; }}
+  h1,h2,h3 {{ font-family:'Syne',sans-serif; }}
+  section[data-testid="stSidebar"] {{ background:{COLORS['primary']}; }}
+  section[data-testid="stSidebar"] * {{ color:#fff !important; }}
   div[data-testid="stVerticalBlockBorderWrapper"] {{
-      background: {COLORS['card']};
-      border-radius: 12px !important;
-      border: 1px solid {COLORS['border']} !important;
-      box-shadow: 0 1px 4px rgba(0,0,0,0.06);
-      padding: 4px 8px;
-      margin-bottom: 10px;
+      background:{COLORS['card']};
+      border-radius:12px !important;
+      border:1px solid {COLORS['border']} !important;
+      box-shadow:0 1px 4px rgba(0,0,0,0.06);
+      padding:4px 8px;
+      margin-bottom:10px;
   }}
-
-  /* Boutons primaires */
   div.stButton > button[kind="primary"] {{
-      background: {COLORS['primary']} !important;
-      color: white !important;
-      border: none !important;
-      border-radius: 8px !important;
-      font-family: 'DM Sans', sans-serif !important;
-      font-weight: 600 !important;
+      background:{COLORS['primary']} !important;
+      color:white !important;
+      border:none !important;
+      border-radius:8px !important;
+      font-family:'DM Sans',sans-serif !important;
+      font-weight:600 !important;
   }}
-
-  /* Metriques */
-  div[data-testid="stMetricValue"] {{
-      font-family: 'Syne', sans-serif;
-      font-weight: 700;
-  }}
-
-  /* Tags domaines */
   .tag-domain {{
-      display: inline-block;
-      background: #DCFCE7;
-      color: {COLORS['primary']};
-      border: 1px solid #BBF7D0;
-      border-radius: 6px;
-      padding: 2px 10px;
-      font-size: 0.78rem;
-      font-weight: 600;
-      margin: 2px;
+      display:inline-block; background:#DCFCE7; color:{COLORS['primary']};
+      border:1px solid #BBF7D0; border-radius:6px;
+      padding:2px 10px; font-size:0.78rem; font-weight:600; margin:2px;
   }}
-
-  /* Tags competences */
   .tag-skill {{
-      display: inline-block;
-      background: #EEF2FF;
-      color: {COLORS['indigo']};
-      border: 1px solid #C7D2FE;
-      border-radius: 6px;
-      padding: 2px 10px;
-      font-size: 0.76rem;
-      font-weight: 500;
-      margin: 2px;
+      display:inline-block; background:#EEF2FF; color:{COLORS['indigo']};
+      border:1px solid #C7D2FE; border-radius:6px;
+      padding:2px 10px; font-size:0.76rem; font-weight:500; margin:2px;
   }}
-
-  /* Score vert */
   .score-green {{
-      display: inline-block;
-      background: #DCFCE7;
-      color: #166534;
-      border: 2px solid #86EFAC;
-      border-radius: 50%;
-      width: 52px;
-      height: 52px;
-      line-height: 48px;
-      text-align: center;
-      font-family: 'Syne', sans-serif;
-      font-size: 1rem;
-      font-weight: 800;
+      display:inline-block; background:#DCFCE7; color:#166534;
+      border:2px solid #86EFAC; border-radius:50%;
+      width:52px; height:52px; line-height:48px; text-align:center;
+      font-family:'Syne',sans-serif; font-size:1rem; font-weight:800;
   }}
-
-  /* Score orange */
   .score-orange {{
-      display: inline-block;
-      background: #FEF3C7;
-      color: #92400E;
-      border: 2px solid #FDE68A;
-      border-radius: 50%;
-      width: 52px;
-      height: 52px;
-      line-height: 48px;
-      text-align: center;
-      font-family: 'Syne', sans-serif;
-      font-size: 1rem;
-      font-weight: 800;
+      display:inline-block; background:#FEF3C7; color:#92400E;
+      border:2px solid #FDE68A; border-radius:50%;
+      width:52px; height:52px; line-height:48px; text-align:center;
+      font-family:'Syne',sans-serif; font-size:1rem; font-weight:800;
   }}
-
-  /* Score rouge */
-  .score-red {{
-      display: inline-block;
-      background: #FEE2E2;
-      color: #991B1B;
-      border: 2px solid #FECACA;
-      border-radius: 50%;
-      width: 52px;
-      height: 52px;
-      line-height: 48px;
-      text-align: center;
-      font-family: 'Syne', sans-serif;
-      font-size: 1rem;
-      font-weight: 800;
+  .score-gray {{
+      display:inline-block; background:#F1F5F9; color:#64748B;
+      border:2px solid #CBD5E1; border-radius:50%;
+      width:52px; height:52px; line-height:48px; text-align:center;
+      font-family:'Syne',sans-serif; font-size:1rem; font-weight:800;
   }}
-
   .pill-provider {{
-      display: inline-block;
-      background: {COLORS['primary']};
-      color: white;
-      border-radius: 20px;
-      padding: 2px 12px;
-      font-size: 0.73rem;
-      font-weight: 600;
+      display:inline-block; background:{COLORS['primary']}; color:white;
+      border-radius:20px; padding:2px 12px; font-size:0.73rem; font-weight:600;
   }}
-
   .pill-mult {{
-      display: inline-block;
-      background: #4F46E5;
-      color: white;
-      border-radius: 20px;
-      padding: 2px 12px;
-      font-size: 0.73rem;
-      font-weight: 700;
+      display:inline-block; background:#4F46E5; color:white;
+      border-radius:20px; padding:2px 12px; font-size:0.73rem; font-weight:700;
   }}
-
   .rank-dot {{
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      width: 26px;
-      height: 26px;
-      border-radius: 50%;
-      background: {COLORS['primary']};
-      color: white;
-      font-family: 'Syne', sans-serif;
-      font-size: 0.82rem;
-      font-weight: 700;
+      display:inline-flex; align-items:center; justify-content:center;
+      width:26px; height:26px; border-radius:50%;
+      background:{COLORS['primary']}; color:white;
+      font-family:'Syne',sans-serif; font-size:0.82rem; font-weight:700;
   }}
-
   .exp-row {{
-      background: #F8FAFC;
-      border: 1px solid {COLORS['border']};
-      border-radius: 8px;
-      padding: 6px 12px;
-      margin: 3px 0;
-      font-size: 0.83rem;
+      background:#F8FAFC; border:1px solid {COLORS['border']};
+      border-radius:8px; padding:6px 12px; margin:3px 0; font-size:0.83rem;
   }}
-
   .campaign-header {{
-      background: {COLORS['primary']};
-      color: white;
-      border-radius: 10px;
-      padding: 12px 18px;
-      margin-bottom: 14px;
-  }}
-
-  div.stAlert {{
-      border-radius: 10px;
+      background:{COLORS['primary']}; color:white;
+      border-radius:10px; padding:12px 18px; margin-bottom:14px;
   }}
 </style>
 """, unsafe_allow_html=True)
@@ -215,7 +121,9 @@ def display_name(c: dict) -> str:
     return name if name else (f"Contact #{c['id']}" if c.get("id") else "Nouveau contact")
 
 def score_class(s):
-    return "score-green" if s >= 65 else ("score-orange" if s >= 40 else "score-red")
+    if s >= 65: return "score-green"
+    if s >= 40: return "score-orange"
+    return "score-gray"
 
 def wa_number(phone):
     if not phone: return ""
@@ -225,7 +133,7 @@ def wa_number(phone):
 def show_pdf(filename):
     path = Path(CV_STORAGE_PATH) / filename
     if not path.exists():
-        st.warning("Fichier introuvable.")
+        st.info("📄 Le fichier PDF n'est pas disponible sur ce serveur. Uploadez-le a nouveau pour le visualiser.")
         return
     with open(path, "rb") as f:
         b64 = base64.b64encode(f.read()).decode()
@@ -259,22 +167,49 @@ with st.sidebar:
     st.markdown('<h1 style="font-family:Syne,sans-serif;font-size:1.5rem;margin-bottom:2px;">🟢 Noovee</h1>', unsafe_allow_html=True)
     st.markdown('<p style="font-size:0.78rem;opacity:0.7;margin-top:0;">Base de Contacts IA</p>', unsafe_allow_html=True)
     st.markdown("---")
+
     page = st.radio("Navigation",
         ["🏠 Accueil", "📤 Upload CV", "👥 Base de Contacts"],
         label_visibility="collapsed")
+
     st.markdown("---")
     status = get_providers_status()
     st.markdown("**Providers IA**")
     for k in ["mistral", "openai", "anthropic"]:
         st.markdown(f"{'🟢' if status[k] else '🔴'} {k.capitalize()}")
+
     st.markdown("---")
     st.metric("Contacts", db.count_contacts())
     n_sel = len(st.session_state.selected_ids)
     if n_sel:
         st.markdown(f"**{n_sel} selectionne(s)**")
+
+    st.markdown("---")
     if st.button("🔄 Re-scanner", use_container_width=True):
         st.session_state.startup_done = False
         st.rerun()
+
+    st.markdown("---")
+    if st.session_state.confirm_reset:
+        st.warning("⚠️ Confirmer la suppression ?")
+        col_ok, col_no = st.columns(2)
+        if col_ok.button("✅ Oui", use_container_width=True):
+            contacts_all = db.get_all_contacts()
+            for c in contacts_all:
+                db.delete_contact(c["id"])
+                if c.get("cv_filename"):
+                    cvp.delete_cv_file(c["cv_filename"])
+            st.session_state.confirm_reset = False
+            st.session_state.selected_ids  = set()
+            st.session_state.campaign_messages = {}
+            st.rerun()
+        if col_no.button("❌ Non", use_container_width=True):
+            st.session_state.confirm_reset = False
+            st.rerun()
+    else:
+        if st.button("🗑️ Vider la base", use_container_width=True):
+            st.session_state.confirm_reset = True
+            st.rerun()
 
 
 # ── Notifications ──────────────────────────────────────────────────────────────
@@ -315,12 +250,16 @@ def show_score_detail(scores: dict):
     comp_base = scores.get("comp_base", scores["competences"])
     if nb_exp > 0:
         pct = int((mult - 1.0) * 100)
-        st.markdown(f'<span class="pill-mult">🔁 x{mult} profondeur</span> &nbsp; {nb_exp} experience(s) — +{pct}% ({comp_base} → {scores["competences"]})', unsafe_allow_html=True)
+        st.markdown(
+            f'<span class="pill-mult">🔁 x{mult} profondeur</span>'
+            f'&nbsp; {nb_exp} experience(s) — +{pct}% ({comp_base} → {scores["competences"]})',
+            unsafe_allow_html=True,
+        )
         for exp in scores.get("exp_detail", []):
             label = exp.get("poste", "—")
             if exp.get("entreprise"): label += f" — {exp['entreprise']}"
             if exp.get("annees"):     label += f" ({exp['annees']} an{'s' if exp['annees'] > 1 else ''})"
-            st.markdown(f'<div class="exp-row">✅ {label} &nbsp; {exp.get("matches",0)} mot(s)</div>', unsafe_allow_html=True)
+            st.markdown(f'<div class="exp-row">✅ {label} · {exp.get("matches",0)} mot(s)</div>', unsafe_allow_html=True)
     if scores.get("bonus_domaine"):
         st.caption("✨ Bonus domaine (+8 pts)")
     if scores.get("mots_trouves"):
@@ -332,7 +271,11 @@ def show_score_detail(scores: dict):
 def show_campaign_bar():
     n = len(st.session_state.selected_ids)
     if not n: return
-    st.markdown(f'<div class="campaign-header"><span style="font-family:Syne,sans-serif;font-size:1.05rem;font-weight:700;">✅ {n} contact{"s" if n > 1 else ""} selectionne{"s" if n > 1 else ""}</span></div>', unsafe_allow_html=True)
+    st.markdown(
+        f'<div class="campaign-header"><span style="font-family:Syne,sans-serif;font-size:1.05rem;font-weight:700;">'
+        f'✅ {n} contact{"s" if n > 1 else ""} selectionne{"s" if n > 1 else ""}</span></div>',
+        unsafe_allow_html=True,
+    )
     c1, c2, _ = st.columns([2, 1.5, 5])
     with c1:
         if st.button("📧 Preparer la campagne", type="primary", use_container_width=True):
@@ -364,9 +307,10 @@ def show_campaign_panel():
     st.markdown("---")
     cg, _ = st.columns([2, 5])
     with cg:
-        gen_all = st.button(f"✨ Generer {len(selected)} message{'s' if len(selected) > 1 else ''}",
-                            type="primary", use_container_width=True, disabled=not context_full.strip())
-
+        gen_all = st.button(
+            f"✨ Generer {len(selected)} message{'s' if len(selected) > 1 else ''}",
+            type="primary", use_container_width=True, disabled=not context_full.strip(),
+        )
     if gen_all:
         prog = st.progress(0)
         for i, c in enumerate(selected):
@@ -395,7 +339,6 @@ def show_campaign_panel():
                     st.link_button("📧 Ouvrir dans Outlook", f"mailto:{email}?subject={subject}&body={quote(msg)}")
                 else:
                     st.warning("Email non renseigne.")
-
         if mailto_list:
             st.markdown("---")
             links_js = json.dumps(mailto_list)
@@ -422,14 +365,14 @@ def show_campaign_panel():
 # ── Carte contact ──────────────────────────────────────────────────────────────
 
 def show_contact_card(c: dict, rank: int = None, key_prefix: str = ""):
-    cid     = c["id"]
-    name    = display_name(c)
-    poste   = c.get("poste") or "—"
-    annees  = c.get("annees_experience", 0)
-    scores  = c.get("score")
-    is_sel  = cid in st.session_state.selected_ids
-    doms    = c.get("domaines_fonctionnels", [])
-    comps   = c.get("competences", [])[:7]
+    cid    = c["id"]
+    name   = display_name(c)
+    poste  = c.get("poste") or "—"
+    annees = c.get("annees_experience", 0)
+    scores = c.get("score")
+    is_sel = cid in st.session_state.selected_ids
+    doms   = c.get("domaines_fonctionnels", [])
+    comps  = c.get("competences", [])[:7]
 
     chk_col, card_col = st.columns([0.5, 11])
 
@@ -445,7 +388,6 @@ def show_contact_card(c: dict, rank: int = None, key_prefix: str = ""):
             col_info, col_score = st.columns([9, 1])
 
             with col_info:
-                # Rang + nom
                 rank_html = f'<span class="rank-dot">#{rank}</span>&nbsp;' if rank else ""
                 mult_html = ""
                 if scores and scores.get("multiplicateur", 1.0) > 1.0:
@@ -455,10 +397,8 @@ def show_contact_card(c: dict, rank: int = None, key_prefix: str = ""):
                     f'&nbsp;<span style="color:{COLORS["muted"]};font-size:0.87rem;">{poste} · {annees} ans</span>{mult_html}',
                     unsafe_allow_html=True,
                 )
-                # Tags domaines
                 if doms:
                     st.markdown(tags_html(doms, "tag-domain"), unsafe_allow_html=True)
-                # Tags competences
                 if comps:
                     st.markdown(tags_html(comps, "tag-skill"), unsafe_allow_html=True)
 
@@ -467,74 +407,75 @@ def show_contact_card(c: dict, rank: int = None, key_prefix: str = ""):
                     s = scores["total"]
                     st.markdown(f'<div class="{score_class(s)}">{s}</div>', unsafe_allow_html=True)
 
-            # Actions
+            # PDF
             filename = c.get("cv_filename")
-            actions  = []
-            if filename and Path(CV_STORAGE_PATH, filename).exists() and filename.lower().endswith(".pdf"):
-                actions.append("📄 CV")
-            if scores:
-                actions.append("📊 Score")
-            actions += ["✏️ Modifier", "📬 Contacter"]
-
-            tabs = st.tabs(actions)
-            tab_idx = 0
-
-            if filename and Path(CV_STORAGE_PATH, filename).exists() and filename.lower().endswith(".pdf"):
-                with tabs[tab_idx]:
+            if filename:
+                with st.expander("📄 Voir le CV"):
                     show_pdf(filename)
-                tab_idx += 1
 
+            # Score
             if scores:
-                with tabs[tab_idx]:
+                with st.expander("📊 Detail du score"):
                     show_score_detail(scores)
-                tab_idx += 1
 
-            with tabs[tab_idx]:  # Modifier
-                with st.form(key=f"form_{key_prefix}_{cid}"):
+            # Modifier
+            with st.expander("✏️ Modifier / Supprimer"):
+                with st.form(key=f"editform_{cid}"):
                     r1, r2 = st.columns(2)
                     prenom  = r1.text_input("Prenom",    value=c.get("prenom") or "")
                     nom_v   = r2.text_input("Nom",       value=c.get("nom") or "")
                     email_v = r1.text_input("Email",     value=c.get("email") or "")
                     tel_v   = r2.text_input("Telephone", value=c.get("telephone") or "")
                     poste_v = st.text_input("Poste",     value=c.get("poste") or "")
-                    ann_v   = st.number_input("Annees", min_value=0, max_value=50,
+                    ann_v   = st.number_input("Annees d'experience", min_value=0, max_value=50,
                                                value=int(c.get("annees_experience") or 0))
                     doms_v  = st.multiselect("Domaines (max 3)", DOMAINES,
                                               default=[d for d in c.get("domaines_fonctionnels", []) if d in DOMAINES],
                                               max_selections=3)
-                    comp_v  = st.text_area("Competences", value="\n".join(c.get("competences", [])), height=80)
+                    comp_v  = st.text_area("Competences (une par ligne)",
+                                           value="\n".join(c.get("competences", [])), height=80)
                     cs, cd  = st.columns([3, 1])
                     saved   = cs.form_submit_button("💾 Sauvegarder", type="primary", use_container_width=True)
-                    delet   = cd.form_submit_button("🗑️", use_container_width=True)
+                    delet   = cd.form_submit_button("🗑️ Supprimer", use_container_width=True)
+
                 if saved:
-                    db.update_contact(cid, {**c,
-                        "prenom": prenom.strip() or None, "nom": nom_v.strip() or None,
-                        "email": email_v.strip() or None, "telephone": tel_v.strip() or None,
-                        "poste": poste_v.strip() or None, "annees_experience": int(ann_v),
+                    db.update_contact(cid, {
+                        **c,
+                        "prenom": prenom.strip() or None,
+                        "nom":    nom_v.strip() or None,
+                        "email":  email_v.strip() or None,
+                        "telephone": tel_v.strip() or None,
+                        "poste":  poste_v.strip() or None,
+                        "annees_experience":     int(ann_v),
                         "domaines_fonctionnels": doms_v,
                         "competences": [x.strip() for x in comp_v.split("\n") if x.strip()],
                     })
-                    st.success("Sauvegarde.")
+                    st.success("✅ Modifications sauvegardees !")
                     st.rerun()
+
                 if delet:
                     db.delete_contact(cid)
                     if c.get("cv_filename"): cvp.delete_cv_file(c["cv_filename"])
                     st.rerun()
-            tab_idx += 1
 
-            with tabs[tab_idx]:  # Contacter
+            # Contacter
+            with st.expander("📬 Contacter"):
                 email_c = c.get("email") or ""
                 phone_c = c.get("telephone") or ""
                 if email_c:
                     subject = quote(f"Opportunite pour {name}")
-                    st.link_button("📧 Ouvrir dans Outlook", f"mailto:{email_c}?subject={subject}", use_container_width=True)
+                    st.link_button("📧 Ouvrir dans Outlook",
+                                   f"mailto:{email_c}?subject={subject}",
+                                   use_container_width=True)
                 else:
-                    st.warning("Email non renseigne.")
+                    st.warning("Email non renseigne — ajoutez-le via Modifier.")
                 wa = wa_number(phone_c)
                 if wa:
-                    st.link_button("💬 Ouvrir WhatsApp", f"https://wa.me/{wa}", use_container_width=True)
+                    st.link_button("💬 Ouvrir WhatsApp",
+                                   f"https://wa.me/{wa}",
+                                   use_container_width=True)
                 else:
-                    st.warning("Telephone non renseigne.")
+                    st.warning("Telephone non renseigne — ajoutez-le via Modifier.")
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -588,7 +529,7 @@ def page_home():
                     poste_ia = ai_crit.get("poste","—")
                     doms_ia  = " · ".join(ai_crit.get("domaines",[]))
                     prov_ia  = ai_crit.get("_provider","?").capitalize()
-                    st.info(f"🤖 **Interpretation IA** via {prov_ia} — Poste : {poste_ia} · Domaines : {doms_ia}")
+                    st.info(f"🤖 **IA** via {prov_ia} — Poste : {poste_ia}" + (f" · Domaines : {doms_ia}" if doms_ia else ""))
                     for i, c in enumerate(ai_res, 1):
                         show_contact_card(c, rank=i, key_prefix=f"ai{i}")
                 else:
