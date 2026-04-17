@@ -128,6 +128,9 @@ with st.sidebar:
     if n_sel:
         st.markdown(f"**{n_sel} selectionne(s)**")
     st.divider()
+    n_certifies = db.count_certifies()
+    st.markdown(f"**🏅 {n_certifies} Certifie(s) Noovee**")
+    st.divider()
     if st.button("🔄 Re-scanner", use_container_width=True):
         st.session_state.startup_done = False
         st.rerun()
@@ -343,8 +346,9 @@ def show_contact_card(c: dict, rank: int = None, key_prefix: str = ""):
                 mult_str = ""
                 if scores and scores.get("multiplicateur", 1.0) > 1.0:
                     mult_str = f"  ·  🔁 x{scores['multiplicateur']} ({scores.get('nb_exp_match',0)} exp.)"
+                certifie_str = "  🏅" if c.get("certifie_noovee") else ""
                 # Nom + poste en une ligne — texte pur, pas de HTML
-                st.markdown(f"{rank_str}**{name}**  \n_{poste} · {annees} ans{mult_str}_")
+                st.markdown(f"{rank_str}**{name}{certifie_str}**  \n_{poste} · {annees} ans{mult_str}_")
                 # Domaines
                 if doms:
                     st.write("🏷️ " + "  ·  ".join(doms))
@@ -384,6 +388,7 @@ def show_contact_card(c: dict, rank: int = None, key_prefix: str = ""):
                                               max_selections=3)
                     comp_v  = st.text_area("Competences (une par ligne)",
                                            value="\n".join(c.get("competences", [])), height=80)
+                    certifie_v = st.toggle("🏅 Certifie Noovee", value=bool(c.get("certifie_noovee", False)))
                     cs, cd  = st.columns([3, 1])
                     saved   = cs.form_submit_button("💾 Sauvegarder", type="primary", use_container_width=True)
                     delet   = cd.form_submit_button("🗑️ Supprimer", use_container_width=True)
@@ -396,6 +401,7 @@ def show_contact_card(c: dict, rank: int = None, key_prefix: str = ""):
                         "poste": poste_v.strip() or None, "annees_experience": int(ann_v),
                         "domaines_fonctionnels": doms_v,
                         "competences": [x.strip() for x in comp_v.split("\n") if x.strip()],
+                        "certifie_noovee": certifie_v,
                     })
                     st.success("✅ Sauvegarde !")
                     st.rerun()

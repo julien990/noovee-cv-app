@@ -233,10 +233,14 @@ def score_contact(contact: dict, criteria: dict) -> dict:
     total = (
         score_competences * 0.50 +
         score_anciennete  * 0.20 +
-        score_domaine     * 0.30   # Domaine pese plus (30% au lieu de 25%)
+        score_domaine     * 0.30
     )
     if bonus_domaine:
         total = min(100, total + 8)
+
+    # ── Bonus Certifie Noovee +10 pts ──────────────────────────────────────
+    if bool(contact.get("certifie_noovee", False)):
+        total = min(100, total + 10)
 
     return {
         "total":           round(total),

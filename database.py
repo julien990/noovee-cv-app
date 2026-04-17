@@ -7,8 +7,6 @@ from datetime import datetime
 from typing import Optional
 
 DATABASE_URL = os.getenv("DATABASE_URL")
-
-# Si DATABASE_URL est defini -> PostgreSQL, sinon -> SQLite local
 USE_POSTGRES = bool(DATABASE_URL)
 
 
@@ -17,7 +15,6 @@ USE_POSTGRES = bool(DATABASE_URL)
 def get_connection():
     if USE_POSTGRES:
         import psycopg2
-        import psycopg2.extras
         conn = psycopg2.connect(DATABASE_URL)
         return conn
     else:
@@ -30,14 +27,12 @@ def get_connection():
 
 
 def placeholder(n: int = 1) -> str:
-    """Retourne le bon placeholder selon le driver (%s pour PG, ? pour SQLite)."""
     if USE_POSTGRES:
         return ", ".join(["%s"] * n)
     return ", ".join(["?"] * n)
 
 
 def ph() -> str:
-    """Placeholder unique."""
     return "%s" if USE_POSTGRES else "?"
 
 
@@ -64,8 +59,13 @@ def init_db():
                     texte_brut            TEXT,
                     cv_filename           TEXT,
                     created_at            TEXT,
-                    updated_at            TEXT
+                    updated_at            TEXT,
+                    certifie_noovee       BOOLEAN DEFAULT FALSE
                 )
+            """)
+            # Migration : ajoute la colonne si elle n'existe pas encore
+            cur.execute("""
+                ALTER TABLE contacts ADD COLUMN IF NOT EXISTS certifie_noovee BOOLEAN DEFAULT FALSE
             """)
         else:
             cur.execute("""
@@ -84,9 +84,15 @@ def init_db():
                     texte_brut            TEXT,
                     cv_filename           TEXT,
                     created_at            TEXT,
-                    updated_at            TEXT
+                    updated_at            TEXT,
+                    certifie_noovee       INTEGER DEFAULT 0
                 )
             """)
+            # Migration SQLite : ajoute la colonne si elle n'existe pas
+            try:
+                cur.execute("ALTER TABLE contacts ADD COLUMN certifie_noovee INTEGER DEFAULT 0")
+            except Exception:
+                pass  # Colonne deja existante
         conn.commit()
     finally:
         conn.close()
@@ -98,25 +104,19 @@ def _encode(value) -> str:
     return json.dumps(value, ensure_ascii=False) if value else "[]"
 
 def _decode(value) -> list:
-    if not value:
-        return []
-    try:
-        return json.loads(value)
-    except Exception:
-        return []
+    if not value: return []
+    try:    return json.loads(value)
+    except: return []
 
 def _clean_str(value) -> Optional[str]:
-    if value is None:
-        return None
+    if value is None: return None
     s = str(value).strip()
-    if s.lower() in ("null", "none", "", "n/a", "na"):
-        return None
-    return s
+    return None if s.lower() in ("null", "none", "", "n/a", "na") else s
 
 def _row_to_dict(row, cursor=None) -> dict:
     if USE_POSTGRES:
         cols = [desc[0] for desc in cursor.description]
-        d = dict(zip(cols, row))
+        d    = dict(zip(cols, row))
     else:
         d = dict(row)
 
@@ -124,8 +124,8 @@ def _row_to_dict(row, cursor=None) -> dict:
         d[field] = _clean_str(d.get(field))
     for field in ("competences", "domaines_fonctionnels", "entreprises", "experiences"):
         d[field] = _decode(d.get(field))
+    d["certifie_noovee"] = bool(d.get("certifie_noovee", False))
     return d
-
 
 def _rows_to_dicts(rows, cursor) -> list:
     return [_row_to_dict(row, cursor) for row in rows]
@@ -135,14 +135,13 @@ def _rows_to_dicts(rows, cursor) -> list:
 
 def insert_contact(data: dict) -> int:
     now = datetime.now().isoformat()
-    p   = ph()
     sql = f"""
         INSERT INTO contacts (
             nom, prenom, email, telephone, poste,
             annees_experience, competences, domaines_fonctionnels,
             entreprises, experiences, texte_brut, cv_filename,
-            created_at, updated_at
-        ) VALUES ({placeholder(14)})
+            created_at, updated_at, certifie_noovee
+        ) VALUES ({placeholder(15)})
     """
     values = (
         _clean_str(data.get("nom")),
@@ -158,8 +157,8 @@ def insert_contact(data: dict) -> int:
         (data.get("texte_brut", "") or "")[:8000],
         data.get("cv_filename"),
         now, now,
+        bool(data.get("certifie_noovee", False)),
     )
-
     conn = get_connection()
     try:
         cur = conn.cursor()
@@ -182,7 +181,8 @@ def update_contact(contact_id: int, data: dict):
         UPDATE contacts SET
             nom={p}, prenom={p}, email={p}, telephone={p}, poste={p},
             annees_experience={p}, competences={p}, domaines_fonctionnels={p},
-            entreprises={p}, experiences={p}, texte_brut={p}, updated_at={p}
+            entreprises={p}, experiences={p}, texte_brut={p},
+            updated_at={p}, certifie_noovee={p}
         WHERE id={p}
     """
     values = (
@@ -198,12 +198,25 @@ def update_contact(contact_id: int, data: dict):
         _encode(data.get("experiences", [])),
         (data.get("texte_brut", "") or "")[:8000],
         now,
+        bool(data.get("certifie_noovee", False)),
         contact_id,
     )
     conn = get_connection()
     try:
         cur = conn.cursor()
         cur.execute(sql, values)
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def set_certifie(contact_id: int, value: bool):
+    """Met a jour uniquement le statut certifie_noovee."""
+    p = ph()
+    conn = get_connection()
+    try:
+        cur = conn.cursor()
+        cur.execute(f"UPDATE contacts SET certifie_noovee={p} WHERE id={p}", (value, contact_id))
         conn.commit()
     finally:
         conn.close()
@@ -230,10 +243,13 @@ def get_all_contacts() -> list:
         conn.close()
 
 
-def search_contacts(query: str) -> list:
+def search_contacts(query: str, certifie_only: bool = False) -> list:
     words = [w.strip() for w in re.split(r"[\s,;]+", query.lower()) if len(w.strip()) >= 2]
     if not words:
-        return get_all_contacts()
+        contacts = get_all_contacts()
+        if certifie_only:
+            contacts = [c for c in contacts if c.get("certifie_noovee")]
+        return contacts
 
     p = ph()
     conditions, params = [], []
@@ -254,6 +270,9 @@ def search_contacts(query: str) -> list:
         params.extend([q, q, q, q, q, q, q])
 
     where = " OR ".join(conditions)
+    if certifie_only:
+        where = f"({where}) AND certifie_noovee = TRUE"
+
     conn = get_connection()
     try:
         cur = conn.cursor()
@@ -274,6 +293,16 @@ def count_contacts() -> int:
         conn.close()
 
 
+def count_certifies() -> int:
+    conn = get_connection()
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT COUNT(*) FROM contacts WHERE certifie_noovee = TRUE")
+        return cur.fetchone()[0]
+    finally:
+        conn.close()
+
+
 def get_tracked_filenames() -> set:
     conn = get_connection()
     try:
@@ -288,12 +317,12 @@ def find_duplicates() -> list:
     contacts = get_all_contacts()
     groups = {}
     for c in contacts:
-        keys = []
+        keys  = []
         email  = (c.get("email") or "").lower().strip()
         nom    = (c.get("nom") or "").lower().strip()
         prenom = (c.get("prenom") or "").lower().strip()
-        if email: keys.append(f"email:{email}")
-        if nom and prenom: keys.append(f"name:{prenom}_{nom}")
+        if email:           keys.append(f"email:{email}")
+        if nom and prenom:  keys.append(f"name:{prenom}_{nom}")
         for key in keys:
             if key not in groups: groups[key] = []
             if not any(x["id"] == c["id"] for x in groups[key]):
@@ -310,7 +339,6 @@ def find_duplicates() -> list:
 
 
 def clean_null_strings():
-    """Nettoie les chaines null existantes en base."""
     conn = get_connection()
     try:
         cur = conn.cursor()
