@@ -1,0 +1,6 @@
+.env
+noovee.db
+cv_storage/
+__pycache__/
+*.pyc
+.DS_Store
