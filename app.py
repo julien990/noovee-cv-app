@@ -22,10 +22,10 @@ except:
 PATH_LOCAL = "/Users/juliensac/Library/CloudStorage/GoogleDrive-julien@miint.pro/Drive partagés/Noovee - CV"
 
 if IS_CLOUD:
-    os.makedirs("/tmp/noovee/PDF", exist_ok=True)
-    PATH_DOSSIER = "/tmp/noovee"
-    PATH_PDF     = "/tmp/noovee/PDF"
-    PATH_DB      = "/tmp/noovee/contacts_db.json"
+    os.makedirs("/data/noovee/PDF", exist_ok=True)
+    PATH_DOSSIER = "/data/noovee"
+    PATH_PDF     = "/data/noovee/PDF"
+    PATH_DB      = "/data/noovee/contacts_db.json"
 else:
     PATH_DOSSIER = PATH_LOCAL
     PATH_PDF     = os.path.join(PATH_LOCAL, "PDF")
