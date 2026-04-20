@@ -458,21 +458,6 @@ def charger_tous_les_cvs(path_dossier, path_pdf):
     entrees = {}
 
     # Si cloud : telecharger les fichiers depuis Drive
-    if IS_CLOUD:
-        folder_id, pdf_folder_id = drive_get_folder_ids()
-        if folder_id:
-            # Telecharger PPTX
-            for f in drive_list_files(folder_id, (".pptx",)):
-                dest = os.path.join(path_dossier, f["name"])
-                if not os.path.exists(dest):
-                    drive_download_file(f["id"], dest)
-            # Telecharger PDF
-            if pdf_folder_id:
-                for f in drive_list_files(pdf_folder_id, (".pdf",)):
-                    dest = os.path.join(path_pdf, f["name"])
-                    if not os.path.exists(dest):
-                        drive_download_file(f["id"], dest)
-
     def ajouter(base, texte, source, pdf_path):
         if base not in entrees:
             entrees[base] = {"texte": texte or "", "source": source, "pdf_path": pdf_path}
