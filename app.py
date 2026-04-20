@@ -1,12 +1,4 @@
 import streamlit as st
-
-# CSS - Enlever le vert horrible
-st.markdown("""
-<style>
-    .stButton > button { background-color: #0284c7 !important; color: white !important; }
-    .stMetricValue { color: #0284c7 !important; }
-</style>
-""", unsafe_allow_html=True)
 import os, re, json, subprocess, shutil, time, base64
 import urllib.request
 import pandas as pd
@@ -22,9 +14,9 @@ NO_DATA = "---"
 
 # Detection cloud vs local
 try:
-    IS_CLOUD = "gcp_service_account" in st.secrets or os.environ.get("IS_CLOUD_OVERRIDE") == "true"
+    IS_CLOUD = "gcp_service_account" in st.secrets
 except:
-    IS_CLOUD = os.environ.get("IS_CLOUD_OVERRIDE") == "true"
+    IS_CLOUD = False
 
 # Chemins
 PATH_LOCAL = "/Users/juliensac/Library/CloudStorage/GoogleDrive-julien@miint.pro/Drive partagés/Noovee - CV"
@@ -436,10 +428,20 @@ def analyser_cv_avec_ia(texte):
 # 6. GESTION DE LA BASE DE DONNEES
 # ---------------------------------------------------------------------------
 def charger_db():
-    return charger_db_cloud()
+    if os.path.exists(PATH_DB):
+        try:
+            with open(PATH_DB, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except:
+            return {}
+    return {}
 
 def sauvegarder_db(db):
-    sauvegarder_db_cloud(db)
+    try:
+        with open(PATH_DB, "w", encoding="utf-8") as f:
+            json.dump(db, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        st.error("Erreur sauvegarde : " + str(e))
 
 def tel_valide(tel):
     return bool(tel) and str(tel) not in (NO_DATA, "", "None", "null") and len(str(tel)) >= 10
@@ -528,6 +530,84 @@ def charger_tous_les_cvs(path_dossier, path_pdf):
 # ---------------------------------------------------------------------------
 # 8. RECHERCHE
 # ---------------------------------------------------------------------------
+def couleur_domaine(domaine):
+    """Retourne la classe CSS pour un domaine fonctionnel."""
+    d = domaine.lower()
+    if "conformit" in d or "rgpd" in d: return "dom-conformite"
+    if "finance" in d or "contrôle" in d or "compt" in d: return "dom-finance"
+    if "achat" in d: return "dom-achats"
+    if "rh" in d or "ressource" in d: return "dom-rh"
+    if "it" in d or "digital" in d or "cyber" in d: return "dom-it"
+    if "data" in d or "bi" in d: return "dom-data"
+    if "juridique" in d or "legal" in d: return "dom-juridique"
+    if "risk" in d or "audit" in d: return "dom-risk"
+    return "dom-default"
+
+def initiales(nom, prenom):
+    """Retourne les initiales pour l'avatar."""
+    n = (prenom[:1] if prenom and prenom not in (NO_DATA,"","None") else "") +         (nom[:1] if nom and nom not in (NO_DATA,"","None") else "")
+    return n.upper() or "?"
+
+def render_cv_card(base, info, show_score=None, show_buttons=True):
+    """Génère le HTML d'une carte CV avec styles inline."""
+    nom     = info.get("nom", NO_DATA)
+    prenom  = info.get("prenom", NO_DATA)
+    poste   = info.get("poste", NO_DATA)
+    email   = info.get("email", NO_DATA)
+    tel     = info.get("telephone", NO_DATA)
+    secteur = info.get("secteur", NO_DATA)
+    domaines = info.get("domaines", [])
+    comps    = info.get("competences", [])[:5]
+    notes    = info.get("notes", "")
+    certifie = info.get("certifie_noovee", False)
+    nom_affiche = (prenom + " " + nom).strip()
+    if nom_affiche in ("--- ---","--- "," ---",""): nom_affiche = base[:25]
+    ini = initiales(nom, prenom)
+
+    # Tous les badges domaines en bleu élégant
+    def dom_style(d):
+        return "background:#E8F0FE;color:#3B5BDB"
+
+    badge_style = "padding:3px 10px;border-radius:20px;font-size:0.72rem;font-weight:600;margin:2px;display:inline-block"
+    badges_dom  = "".join(f'<span style="{badge_style};{dom_style(d)}">{d.split("/")[0].strip()}</span>' for d in domaines[:3])
+    badges_comp = "".join(f'<span style="{badge_style};background:#F1F5F9;color:#475569">{c}</span>' for c in comps)
+    badge_noovee = f'<span style="{badge_style};background:linear-gradient(135deg,#FCD34D,#F59E0B);color:white">⭐ Certifié Noovee</span>' if certifie else ""
+
+    note_html = f'<div style="background:#FFFBEB;border-left:3px solid #F59E0B;border-radius:0 8px 8px 0;padding:6px 10px;font-size:0.78rem;color:#78350F;margin-top:8px;font-style:italic">📝 {notes}</div>' if notes else ""
+
+    score_html = ""
+    if show_score is not None:
+        sc = show_score
+        bg = "linear-gradient(135deg,#52B788,#2D6A4F)" if sc>=70 else "linear-gradient(135deg,#F59E0B,#D97706)" if sc>=40 else "linear-gradient(135deg,#EF4444,#DC2626)"
+        score_html = f'<div style="width:52px;height:52px;border-radius:50%;background:{bg};display:flex;align-items:center;justify-content:center;color:white;font-weight:800;font-size:0.9rem;flex-shrink:0">{sc}%</div>'
+
+    info_items = []
+    if email not in (NO_DATA,"","None","null"): info_items.append(f"✉️ {email[:28]}")
+    if tel not in (NO_DATA,"","None","null"):   info_items.append(f"📱 {tel}")
+    if secteur not in (NO_DATA,"","None","null"): info_items.append(f"🏢 {secteur}")
+    info_html = "".join(f'<span style="font-size:0.78rem;color:#486074">{it}</span>' for it in info_items)
+
+    html = f"""<div style="background:white;border-radius:14px;border:1px solid #E2E8F0;padding:1rem 1.2rem;
+margin-bottom:0.5rem;box-shadow:0 2px 12px rgba(9,63,40,.07);position:relative;
+border-left:4px solid #52B788;font-family:'DM Sans',sans-serif">
+<div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:0.6rem">
+  <div style="display:flex;align-items:center;gap:0.8rem">
+    <div style="width:44px;height:44px;background:linear-gradient(135deg,#2D6A4F,#52B788);border-radius:50%;
+    display:flex;align-items:center;justify-content:center;color:white;font-weight:800;font-size:1.1rem;flex-shrink:0">{ini}</div>
+    <div>
+      <div style="font-weight:700;font-size:1rem;color:#1E2A3A">{nom_affiche}</div>
+      <div style="font-size:0.8rem;color:#486074">{poste if poste not in (NO_DATA,"","None") else "Poste non renseigné"}</div>
+    </div>
+  </div>
+  <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px">{score_html}{badge_noovee}</div>
+</div>
+<div style="margin-bottom:0.4rem">{badges_dom}{badges_comp}</div>
+<div style="display:flex;flex-wrap:wrap;gap:8px">{info_html}</div>
+{note_html}
+</div>"""
+    return html
+
+
 def filtrer_cvs(entrees, query, db):
     termes = normaliser(query).split()
     if not termes:
@@ -602,9 +682,9 @@ st.markdown("""
 
 /* ─── Variables ────────────────────────────── */
 :root {
-    --g-dark:   #093F28;
-    --g-mid:    #1A6B45;
-    --g-light:  #E8F4EE;
+    --g-dark:   #2D6A4F;
+    --g-mid:    #52B788;
+    --g-light:  #F0F7F4;
     --coral:    #E07878;
     --coral-lt: #FDF1F1;
     --navy:     #1E2A3A;
@@ -836,6 +916,11 @@ div[data-testid="metric-container"] [data-testid="stMetricValue"] {
     border-radius: var(--radius) !important;
     border: 1px solid var(--border) !important;
     overflow: hidden !important;
+    font-size: 0.78rem !important;
+}
+[data-testid="stDataFrame"] td, [data-testid="stDataFrame"] th {
+    font-size: 0.78rem !important;
+    padding: 4px 8px !important;
 }
 
 /* ─── Progress bar ─────────────────────────── */
@@ -928,6 +1013,8 @@ if not os.path.exists(PATH_DOSSIER):
 
 if "ao_cv_ouvert" not in st.session_state:
     st.session_state["ao_cv_ouvert"] = None
+if "note_edit" not in st.session_state:
+    st.session_state["note_edit"] = None
 if "ao_criteres" not in st.session_state:
     st.session_state["ao_criteres"] = None
 if "ao_cdc" not in st.session_state:
@@ -953,10 +1040,12 @@ for base, data in entrees_cvs.items():
             "email": email, "telephone": tel,
             "poste": NO_DATA, "competences": [],
             "secteur": detecter_secteur(texte),
-            "texte_brut": texte[:8000] if texte else "",  # texte complet stocké
+            "texte_brut": texte[:8000] if texte else "",
             "ia_enrichi": False,
             "date_ajout": datetime.now().strftime("%Y-%m-%d %H:%M"),
             "whatsapp_envoye": False,
+            "certifie_noovee": False,
+            "notes": "",
         }
         modif = True
     elif not db[base].get("secteur") or db[base].get("secteur") == NO_DATA:
@@ -1386,7 +1475,7 @@ with tab_recherche:
                     info_d = db.get(s["base"], {})
                     texte_d = entrees_cvs.get(s["base"], {}).get("texte","") or ""
                     g = cd.get("global", 0)
-                    bg = "#1A6B45" if g>=70 else "#F59E0B" if g>=40 else "#EF4444"
+                    bg = "#52B788" if g>=70 else "#F59E0B" if g>=40 else "#EF4444"
                     st.markdown(
                         f'<span style="background:{bg};color:white;padding:2px 8px;'
                         f'border-radius:6px;font-weight:700">{g}%</span> ' +
@@ -1416,7 +1505,7 @@ with tab_recherche:
                 with row[0]:
                     g = cd["global"]
                     if g >= 70:
-                        bg, fg = "#1A6B45", "white"
+                        bg, fg = "#52B788", "white"
                     elif g >= 40:
                         bg, fg = "#F59E0B", "white"
                     else:
@@ -1449,7 +1538,7 @@ with tab_recherche:
                     info_d = db.get(s["base"], {})
                     texte_d = (entrees_cvs.get(s["base"], {}).get("texte","") or "")[:100]
                     g = s.get("score", 0)
-                    c = "#1A6B45" if g >= 70 else "#F59E0B" if g >= 40 else "#6B7280"
+                    c = "#52B788" if g >= 70 else "#F59E0B" if g >= 40 else "#6B7280"
                     st.markdown(
                         f'<b style="color:{c}">{g}%</b> — **{s["nom"]}** '
                         f'| Compét: {cd.get("competences",0)} '
@@ -1481,52 +1570,162 @@ with tab_recherche:
     # RESULTATS PLEINE LARGEUR
     # ========================
 
-    # ---- ZONE UPLOAD CV (remontee) ----
+    # ---- ZONE UPLOAD CV — workflow automatique ----
     with st.expander("➕ Ajouter des CVs", expanded=False):
-        st.caption("Déposez vos fichiers PPTX ou PDF — ils seront copiés dans le dossier Drive et analysés automatiquement par IA")
+        st.caption("Déposez vos PDFs — conversion, analyse IA et fiche contact automatiques")
         uploaded_files = st.file_uploader(
-            "Choisir des fichiers",
-            type=["pptx", "pdf"],
+            "Choisir des fichiers (PDF ou PPTX)",
+            type=["pdf", "pptx"],
             accept_multiple_files=True,
             key="upload_cvs"
         )
-        if uploaded_files:
-            nb_ok = nb_skip = nb_err = 0
-            barre_up = st.progress(0)
+        if uploaded_files and st.button("🚀 Analyser automatiquement", type="primary", key="btn_auto_analyse"):
+            resultats_upload = []
+            barre_up = st.progress(0, text="Traitement en cours...")
             for i, uf in enumerate(uploaded_files):
-                ext      = os.path.splitext(uf.name)[1].lower()
+                barre_up.progress((i+0.3)/len(uploaded_files), text=f"📄 {uf.name}...")
+                ext  = os.path.splitext(uf.name)[1].lower()
+                data = uf.read()
+
+                # 1. Sauvegarder le fichier
                 dest_dir = PATH_PDF if ext == ".pdf" else PATH_DOSSIER
-                dest     = os.path.join(dest_dir, uf.name)
-                if os.path.exists(dest):
-                    nb_skip += 1
-                    continue
-                try:
-                    data_uf = uf.read()
-                    with open(dest, "wb") as fd:
-                        fd.write(data_uf)
-                    # Si PPTX → convertir en PDF automatiquement
-                    if ext == ".pptx":
-                        soffice = None
-                        for c in ["/Applications/LibreOffice.app/Contents/MacOS/soffice",
-                                   shutil.which("soffice"), shutil.which("libreoffice")]:
-                            if c and os.path.exists(str(c)):
-                                soffice = c; break
-                        if soffice:
-                            subprocess.run([soffice, "--headless", "--convert-to", "pdf",
-                                "--outdir", PATH_PDF, dest],
-                                capture_output=True, timeout=30)
-                    nb_ok += 1
-                except Exception as e:
-                    nb_err += 1
-                barre_up.progress((i+1)/len(uploaded_files))
+                dest = os.path.join(dest_dir, uf.name)
+                with open(dest, "wb") as fd:
+                    fd.write(data)
+
+                # 2. Conversion PPTX → PDF si nécessaire
+                pdf_path = dest
+                if ext == ".pptx":
+                    soffice = None
+                    for c in ["/Applications/LibreOffice.app/Contents/MacOS/soffice",
+                               shutil.which("soffice"), shutil.which("libreoffice")]:
+                        if c and os.path.exists(str(c)):
+                            soffice = c; break
+                    if soffice:
+                        subprocess.run([soffice, "--headless", "--convert-to", "pdf",
+                            "--outdir", PATH_PDF, dest], capture_output=True, timeout=30)
+                        pdf_path = os.path.join(PATH_PDF, uf.name.replace(".pptx", ".pdf"))
+
+                # 3. Extraire le texte
+                barre_up.progress((i+0.5)/len(uploaded_files), text=f"🔍 Extraction texte...")
+                texte = ""
+                if ext == ".pdf":
+                    texte = extraire_texte_pdf(dest) or ""
+                elif ext == ".pptx":
+                    texte = extraire_texte_pptx(dest) or ""
+                if not texte and pdf_path and os.path.exists(pdf_path):
+                    texte = extraire_texte_pdf(pdf_path) or ""
+
+                # 4. Nom de base normalisé
+                base = os.path.splitext(uf.name)[0]
+
+                # 5. Initialiser en DB si absent
+                if base not in db:
+                    email_auto = ""
+                    tel_auto   = ""
+                    m = re.search(r"[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}", texte)
+                    if m: email_auto = m.group(0).lower()
+                    db[base] = {
+                        "nom": NO_DATA, "prenom": NO_DATA,
+                        "email": email_auto, "telephone": tel_auto,
+                        "poste": NO_DATA, "competences": [],
+                        "secteur": detecter_secteur(texte),
+                        "texte_brut": texte[:8000],
+                        "ia_enrichi": False,
+                        "date_ajout": datetime.now().strftime("%Y-%m-%d %H:%M"),
+                        "whatsapp_envoye": False,
+                    }
+
+                # 6. Analyse IA
+                barre_up.progress((i+0.7)/len(uploaded_files), text=f"🤖 Analyse IA...")
+                provider, key_ia = get_provider_extraction()
+                if key_ia and texte:
+                    infos = analyser_cv_avec_ia(texte)
+                    if infos:
+                        for champ in ["nom","prenom","email","poste"]:
+                            val_c = str(infos.get(champ) or "").strip()
+                            if val_c and val_c.lower() not in ("null","none",""):
+                                db[base][champ] = val_c
+                        tel = str(infos.get("telephone") or "").strip()
+                        if tel_valide(tel): db[base]["telephone"] = tel
+                        comps = infos.get("competences") or []
+                        if isinstance(comps, list) and comps:
+                            db[base]["competences"] = [c for c in comps if c and str(c).lower() != "null"]
+                        dom_ia = [d for d in (infos.get("domaines_fonctionnels") or [])
+                                  if d and str(d).lower() not in ("null","none","")]
+                        dom_auto = detecter_domaines(texte, db[base].get("competences",[]))
+                        db[base]["domaines"] = list(dict.fromkeys(dom_ia + dom_auto))[:3]
+                        exps = infos.get("experiences") or []
+                        if exps:
+                            db[base]["experiences"] = [
+                                {"poste": str(e.get("poste","")).strip(),
+                                 "entreprise": str(e.get("entreprise","")).strip(),
+                                 "domaine": str(e.get("domaine","")).strip(),
+                                 "annees": int(e.get("annees",1)) if str(e.get("annees","1")).replace(".","").isdigit() else 1,
+                                 "mots_cles": [str(m).lower() for m in (e.get("mots_cles") or []) if m]}
+                                for e in exps if e.get("poste")
+                            ]
+                        # Multi-secteurs
+                        secteurs_ia = list({e.get("secteur","") for e in db[base].get("entreprises",[]) if e.get("secteur")})
+                        secteurs_table = deduire_secteurs_depuis_table(texte)
+                        tous_secteurs = list(dict.fromkeys(secteurs_ia + secteurs_table))
+                        db[base]["secteurs"] = tous_secteurs[:5]
+                        db[base]["secteur"] = tous_secteurs[0] if tous_secteurs else detecter_secteur(texte)
+                        db[base]["ia_enrichi"] = True
+                        db[base]["texte_brut"] = texte[:8000]
+
+                sauvegarder_db(db)
+                nom_affiche = (db[base].get("prenom","") + " " + db[base].get("nom","")).strip() or base
+                resultats_upload.append({"base": base, "nom": nom_affiche, "pdf": pdf_path})
+                barre_up.progress((i+1)/len(uploaded_files), text=f"✅ {nom_affiche}")
+
             barre_up.empty()
-            if nb_ok:
-                charger_tous_les_cvs.clear()
-                msg = str(nb_ok) + " CV(s) ajouté(s)"
-                if nb_err: msg += " · " + str(nb_err) + " erreur(s)"
-                st.success(msg + " — Cliquez 'IA' pour analyser")
-            if nb_skip:
-                st.info(str(nb_skip) + " fichier(s) déjà présent(s) ignoré(s).")
+            charger_tous_les_cvs.clear()
+
+            # 7. Afficher les fiches contacts analysées
+            st.success(f"✅ {len(resultats_upload)} CV(s) analysé(s) avec succès !")
+            st.session_state["upload_resultats"] = resultats_upload
+            st.session_state["upload_show_fiches"] = True
+            st.rerun()
+
+    # Afficher les fiches après upload
+    if st.session_state.get("upload_show_fiches") and st.session_state.get("upload_resultats"):
+        st.markdown("---")
+        st.markdown("### 📋 Fiches contacts créées")
+        for r in st.session_state["upload_resultats"]:
+            base = r["base"]
+            info = db.get(base, {})
+            nom_a = (info.get("prenom","") + " " + info.get("nom","")).strip() or base
+            with st.expander(f"👤 {nom_a} — {info.get('poste', '---')}", expanded=True):
+                c1, c2 = st.columns(2)
+                with c1:
+                    st.markdown(f"**📧** {info.get('email', '---')}")
+                    st.markdown(f"**📱** {info.get('telephone', '---')}")
+                    st.markdown(f"**🏢** {info.get('secteur', '---')}")
+                with c2:
+                    st.markdown(f"**💼** {info.get('poste', '---')}")
+                    doms = info.get("domaines", [])
+                    if doms:
+                        badges = " ".join(f'<span style="background:#E8F0FE;color:#3B5BDB;padding:3px 10px;border-radius:20px;font-size:0.75rem;font-weight:600;margin:2px;display:inline-block">{d.split("/")[0].strip()}</span>' for d in doms)
+                        st.markdown("**🎯** " + badges, unsafe_allow_html=True)
+                comps = info.get("competences", [])
+                if comps:
+                    st.markdown("**Compétences :** " + ", ".join(comps[:8]))
+                exps = info.get("experiences", [])
+                if exps:
+                    st.markdown("**Expériences clés :**")
+                    for exp in exps[:3]:
+                        st.markdown(f"  • **{exp.get('poste','')}** — {exp.get('entreprise','')} ({exp.get('annees','')} an(s)) · *{exp.get('domaine','')}*")
+                col_save, col_close = st.columns([1, 1])
+                with col_save:
+                    if st.button("✅ Confirmer", key="confirm_"+base, type="primary"):
+                        st.session_state["upload_show_fiches"] = False
+                        st.rerun()
+                with col_close:
+                    if st.button("✏️ Modifier", key="edit_upload_"+base):
+                        st.session_state["edit_contact"] = base
+                        st.session_state["upload_show_fiches"] = False
+                        st.rerun()
 
     st.divider()
 
@@ -1779,6 +1978,18 @@ if st.session_state.get("edit_contact"):
             )
             st.markdown(badges, unsafe_allow_html=True)
 
+        # Certifié Noovee + Notes
+        col_cert, _ = st.columns([1, 2])
+        with col_cert:
+            e_certifie = st.toggle("⭐ Certifié Noovee",
+                value=info.get("certifie_noovee", False),
+                key="cert_dial_" + base_edit)
+        e_notes = st.text_area("📝 Notes",
+            value=info.get("notes", ""),
+            height=80,
+            placeholder="Vos observations sur ce candidat...",
+            key="notes_dial_" + base_edit)
+
         # Texte brut du CV (pour vérification)
         texte_brut_cv = info.get("texte_brut", "")
         if texte_brut_cv:
@@ -1791,14 +2002,16 @@ if st.session_state.get("edit_contact"):
         with col_s:
             if st.button("Sauvegarder", type="primary", use_container_width=True):
                 db[base_edit].update({
-                    "prenom":      e_prenom.strip(),
-                    "nom":         e_nom.strip(),
-                    "email":       e_email.strip(),
-                    "telephone":   e_tel.strip(),
-                    "poste":       e_poste.strip(),
-                    "secteur":     e_secteur,
-                    "domaines":    e_domaines,
-                    "competences": [c.strip() for c in e_comp.split(",") if c.strip()],
+                    "prenom":           e_prenom.strip(),
+                    "nom":              e_nom.strip(),
+                    "email":            e_email.strip(),
+                    "telephone":        e_tel.strip(),
+                    "poste":            e_poste.strip(),
+                    "secteur":          e_secteur,
+                    "domaines":         e_domaines,
+                    "competences":      [c.strip() for c in e_comp.split(",") if c.strip()],
+                    "certifie_noovee":  e_certifie,
+                    "notes":            e_notes.strip(),
                 })
                 sauvegarder_db(db)
                 st.session_state["edit_contact"] = None
@@ -2034,145 +2247,99 @@ with tab_contacts:
         if "cv_ouvert" not in st.session_state:
             st.session_state["cv_ouvert"] = None
 
-        # Lignes du tableau
+        # ── Cartes CV ────────────────────────────────────────
         for d in data_list:
-            cols = st.columns([2, 1, 1.5, 1.8, 1.5, 1.5, 2.5, 0.6, 0.6])
-            
-            # Nom affiché - fallback sur le nom de fichier si pas de nom
-            nom = d["Nom"] if d["Nom"] != NO_DATA else ""
-            prenom = d["Prenom"] if d["Prenom"] != NO_DATA else ""
-            if nom or prenom:
-                nom_affiche = (prenom + " " + nom).strip()
-            else:
-                # Extraire depuis le nom de fichier
-                parts = d["Fichier"].replace("_", " ").replace("-", " ").split()
-                nom_affiche = " ".join(p for p in parts if len(p) > 2)[:30] or d["Fichier"][:20]
+            info_c = db.get(d["Fichier"], {})
+            nom    = info_c.get("nom", NO_DATA)
+            prenom = info_c.get("prenom", NO_DATA)
+            nom_affiche = (prenom + " " + nom).strip()
+            if nom_affiche in ("--- ---", "--- ", " ---", ""): nom_affiche = d["Fichier"][:25]
 
-            with cols[0]:
-                st.write("**" + nom_affiche + "**")
+            # Afficher la carte HTML
+            st.markdown(render_cv_card(d["Fichier"], info_c), unsafe_allow_html=True)
 
-            with cols[1]:
+            # Boutons d action sous la carte
+            btn_cols = st.columns([0.8, 0.8, 0.8, 0.8, 0.8, 3])
+            with btn_cols[0]:
                 if d.get("_pdf_path"):
-                    if st.button("📄 CV", key="cv_btn_" + d["Fichier"], help="Visualiser le CV"):
-                        current = st.session_state.get("cv_ouvert")
-                        st.session_state["cv_ouvert"] = None if current == d["Fichier"] else d["Fichier"]
+                    if st.button("📄 CV", key="cv_btn_" + d["Fichier"]):
+                        cur = st.session_state.get("cv_ouvert")
+                        st.session_state["cv_ouvert"] = None if cur == d["Fichier"] else d["Fichier"]
                         st.rerun()
-                else:
-                    st.caption("—")
-            # Affichage CV inline (pleine largeur sous la ligne)
-            if st.session_state.get("cv_ouvert") == d["Fichier"] and d.get("_pdf_path"):
-                afficher_cv_inline(d["_pdf_path"], nom_affiche, d["Fichier"], session_key="cv_ouvert")
-
-            with cols[2]: st.write(d["Telephone"] if d["Telephone"] != NO_DATA else "")
-            with cols[3]: 
-                email = d["Email"] if d["Email"] != NO_DATA else ""
-                st.write(email[:22] + "..." if len(email) > 22 else email)
-            with cols[4]: st.write(d["Secteur"] if d["Secteur"] != NO_DATA else "")
-            with cols[5]: 
-                poste = d["Poste"] if d["Poste"] != NO_DATA else ""
-                st.write(poste[:22] + "..." if len(poste) > 22 else poste)
-            with cols[6]: st.write(d["Competences"][:45] + "..." if len(d["Competences"]) > 45 else d["Competences"])
-            with cols[7]: st.write("✅" if d["WA"] == "Oui" else "")
-
-            with cols[8]:
-                if st.button("🗑️", key="del_" + d["Fichier"], help="Supprimer ce contact"):
+            with btn_cols[1]:
+                if st.button("✏️ Modifier", key="edit_" + d["Fichier"]):
+                    st.session_state["edit_contact"] = d["Fichier"]
+                    st.rerun()
+            with btn_cols[2]:
+                certifie = info_c.get("certifie_noovee", False)
+                label_cert = "⭐ Certifié" if certifie else "☆ Certifier"
+                if st.button(label_cert, key="cert_" + d["Fichier"]):
+                    db[d["Fichier"]]["certifie_noovee"] = not certifie
+                    sauvegarder_db(db)
+                    st.rerun()
+            with btn_cols[3]:
+                wa = info_c.get("telephone", "")
+                if wa and wa not in (NO_DATA,"","None"):
+                    wa_link = lien_whatsapp(wa, "Bonjour, je me permets de vous contacter.")
+                    st.markdown(f'<a href="{wa_link}" target="_blank" style="text-decoration:none"><button style="background:#25D366;color:white;border:none;padding:6px 12px;border-radius:6px;font-size:0.75rem;cursor:pointer">💬 WA</button></a>', unsafe_allow_html=True)
+            with btn_cols[4]:
+                if st.button("🗑️", key="del_" + d["Fichier"]):
                     st.session_state["confirm_del"] = d["Fichier"]
                     st.rerun()
 
-            # Edition du nom inline
-            if st.session_state.get("edit_contact") == d["Fichier"]:
-                info = db.get(d["Fichier"], {})
-                with st.form(key="form_" + d["Fichier"]):
-                    col_n1, col_n2, col_n3, col_n4 = st.columns([2, 2, 1, 1])
-                    with col_n1:
-                        e_prenom = st.text_input("Prenom", value=info.get("prenom", ""))
-                    with col_n2:
-                        e_nom = st.text_input("Nom", value=info.get("nom", ""))
-                    with col_n3:
-                        saved = st.form_submit_button("OK", type="primary")
-                    with col_n4:
-                        cancelled = st.form_submit_button("Annuler")
-
-                if saved:
-                    db[d["Fichier"]]["prenom"] = e_prenom.strip()
-                    db[d["Fichier"]]["nom"]    = e_nom.strip()
-                    sauvegarder_db(db)
-                    st.session_state["edit_contact"] = None
-                    st.rerun()
-                if cancelled:
-                    st.session_state["edit_contact"] = None
-                    st.rerun()
+            # Zone note rapide
+            note_actuelle = info_c.get("notes", "")
+            if st.session_state.get("note_edit") == d["Fichier"]:
+                new_note = st.text_area("📝 Note :", value=note_actuelle, height=80, key="note_txt_" + d["Fichier"])
+                col_nok, col_ncancel = st.columns([1, 1])
+                with col_nok:
+                    if st.button("Sauvegarder note", key="note_ok_" + d["Fichier"], type="primary"):
+                        db[d["Fichier"]]["notes"] = new_note
+                        sauvegarder_db(db)
+                        st.session_state["note_edit"] = None
+                        st.rerun()
+                with col_ncancel:
+                    if st.button("Annuler", key="note_cancel_" + d["Fichier"]):
+                        st.session_state["note_edit"] = None
+                        st.rerun()
             else:
-                if st.button("✏️", key="edit_" + d["Fichier"], help="Modifier le nom"):
-                    st.session_state["edit_contact"] = d["Fichier"]
+                if st.button("📝 Note", key="note_btn_" + d["Fichier"]):
+                    st.session_state["note_edit"] = d["Fichier"]
                     st.rerun()
+
+            # CV inline
+            if st.session_state.get("cv_ouvert") == d["Fichier"] and d.get("_pdf_path"):
+                afficher_cv_inline(d["_pdf_path"], nom_affiche, d["Fichier"], session_key="cv_ouvert")
 
             # Confirmation suppression
             if st.session_state.get("confirm_del") == d["Fichier"]:
-                with st.container():
-                    st.warning("Supprimer " + nom_affiche + " ?")
-                    c_oui, c_non, c_fich = st.columns([1, 1, 2])
-                    with c_oui:
-                        if st.button("Oui, DB seulement", key="yes_db_" + d["Fichier"]):
-                            del db[d["Fichier"]]
-                            sauvegarder_db(db)
-                            st.session_state["confirm_del"] = None
-                            st.rerun()
-                    with c_non:
-                        if st.button("Oui + fichiers", key="yes_fich_" + d["Fichier"], type="primary"):
-                            del db[d["Fichier"]]
-                            for chemin in [
-                                os.path.join(PATH_DOSSIER, d["Fichier"] + ".pptx"),
-                                os.path.join(PATH_DOSSIER, d["Fichier"] + ".pdf"),
-                                os.path.join(PATH_PDF, d["Fichier"] + ".pdf"),
-                            ]:
-                                if os.path.exists(chemin):
-                                    os.remove(chemin)
-                            sauvegarder_db(db)
-                            charger_tous_les_cvs.clear()
-                            st.session_state["confirm_del"] = None
-                            st.rerun()
-                    with c_fich:
-                        if st.button("Annuler", key="no_" + d["Fichier"]):
-                            st.session_state["confirm_del"] = None
-                            st.rerun()
+                st.warning(f"Supprimer {nom_affiche} ?")
+                c_oui, c_non, c_ann = st.columns([1, 1, 2])
+                with c_oui:
+                    if st.button("Oui, DB seul", key="yes_db_" + d["Fichier"]):
+                        del db[d["Fichier"]]
+                        sauvegarder_db(db)
+                        st.session_state["confirm_del"] = None
+                        st.rerun()
+                with c_non:
+                    if st.button("Oui + fichiers", key="yes_fich_" + d["Fichier"], type="primary"):
+                        del db[d["Fichier"]]
+                        for chemin in [
+                            os.path.join(PATH_DOSSIER, d["Fichier"] + ".pptx"),
+                            os.path.join(PATH_DOSSIER, d["Fichier"] + ".pdf"),
+                            os.path.join(PATH_PDF, d["Fichier"] + ".pdf"),
+                        ]:
+                            if os.path.exists(chemin): os.remove(chemin)
+                        sauvegarder_db(db)
+                        charger_tous_les_cvs.clear()
+                        st.session_state["confirm_del"] = None
+                        st.rerun()
+                with c_ann:
+                    if st.button("Annuler", key="no_" + d["Fichier"]):
+                        st.session_state["confirm_del"] = None
+                        st.rerun()
 
-            # Affichage CV si clique
-            if st.session_state.get("cv_ouvert") == d["Fichier"] and d.get("_pdf_path"):
-                pdf_path = d["_pdf_path"]
-                col_t, col_dl = st.columns([4, 1])
-                with col_t:
-                    st.subheader("CV — " + nom_affiche)
-                with col_dl:
-                    with open(pdf_path, "rb") as f_pdf:
-                        st.download_button(
-                            label="Telecharger",
-                            data=f_pdf,
-                            file_name=os.path.basename(pdf_path),
-                            mime="application/pdf",
-                            key="dl_c_" + d["Fichier"],
-                        )
-                with open(pdf_path, "rb") as f_pdf:
-                    b64 = base64.b64encode(f_pdf.read()).decode()
-                pdfjs = (
-                    "<script src='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js'></script>"
-                    "<div id='pdfc" + d["Fichier"][:8] + "' style='background:#f0f0f0;padding:8px;border-radius:8px;overflow-y:auto;max-height:800px;'></div>"
-                    "<script>"
-                    "pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';"
-                    "var b64='" + b64 + "';"
-                    "var bin=atob(b64);var arr=new Uint8Array(bin.length);"
-                    "for(var i=0;i<bin.length;i++) arr[i]=bin.charCodeAt(i);"
-                    "pdfjsLib.getDocument({data:arr}).promise.then(function(pdf){"
-                    "var c=document.getElementById('pdfc" + d["Fichier"][:8] + "');"
-                    "for(var p=1;p<=pdf.numPages;p++){(function(pn){pdf.getPage(pn).then(function(page){"
-                    "var vp=page.getViewport({scale:1.5});var cv=document.createElement('canvas');"
-                    "cv.width=vp.width;cv.height=vp.height;cv.style.width='100%';"
-                    "cv.style.marginBottom='8px';cv.style.background='white';"
-                    "c.appendChild(cv);page.render({canvasContext:cv.getContext('2d'),viewport:vp});"
-                    "});})(p);}});</script>"
-                )
-                st.components.v1.html(pdfjs, height=850, scrolling=True)
-                st.divider()
+            st.markdown('<div style="height:4px"></div>', unsafe_allow_html=True)
 
         # ---- ENVOI MULTI-CANAL depuis la base ----
         st.divider()
@@ -2203,7 +2370,7 @@ with tab_contacts:
 .btn { display:inline-flex; align-items:center; gap:6px; padding:7px 14px;
        border-radius:8px; font-size:13px; font-weight:500; text-decoration:none; }
 .wa   { background:#25D366; color:white; }
-.mail { background:#093F28; color:white; }
+.mail { background:#2D6A4F; color:white; }
 .li   { background:#0A66C2; color:white; }
 .na   { color:#8898AA; font-size:12px; font-style:italic; }
 </style>
