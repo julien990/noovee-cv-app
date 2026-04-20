@@ -22,9 +22,9 @@ NO_DATA = "---"
 
 # Detection cloud vs local
 try:
-    IS_CLOUD = "gcp_service_account" in st.secrets
+    IS_CLOUD = "gcp_service_account" in st.secrets or os.environ.get("IS_CLOUD_OVERRIDE") == "true"
 except:
-    IS_CLOUD = False
+    IS_CLOUD = os.environ.get("IS_CLOUD_OVERRIDE") == "true"
 
 # Chemins
 PATH_LOCAL = "/Users/juliensac/Library/CloudStorage/GoogleDrive-julien@miint.pro/Drive partagés/Noovee - CV"
